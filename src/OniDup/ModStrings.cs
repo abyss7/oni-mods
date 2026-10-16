@@ -7,6 +7,15 @@ namespace OniDup
 	/// </summary>
 	public static class ONIDUP
 	{
+		public static class OPTIONS
+		{
+			public static class BURIEDBREATH
+			{
+				public static LocString NAME = "Buried Duplicants suffocate";
+				public static LocString TOOLTIP = "A Duplicant buried over the head cannot breathe: they hold their breath, then suffocate unless someone digs them out in time. An Oxygen Mask or a suit still gives them air. Off: they breathe from the free cells next to their head, as in the base game.";
+			}
+		}
+
 		public static class EFFECTS
 		{
 			public static class HYPOXIA
@@ -71,6 +80,7 @@ namespace OniDup
 			public static LocString GASPING = "Gasping for Air";
 			public static LocString VACUUM = "Vacuum Exposure";
 			public static LocString CARBONDIOXIDE = "CO₂ Poisoning";
+			public static LocString BURIED = "Buried";
 		}
 
 		public static class STATUSITEMS

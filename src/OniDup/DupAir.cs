@@ -37,6 +37,8 @@ namespace OniDup
 	/// Too much Oxygen: the game's air is pure Oxygen (1.8 kg in a cell is normal air), so the limits of the real world are moved
 	/// up: pO2 of 2 atm and more for half a cycle in a row gives Oxygen Toxicity, which goes after half a cycle at a normal
 	/// pressure; at 3 atm and more there is a 20% chance of a seizure every minute (knocked off their feet for about 10 s).
+	/// With the mod option "Buried Duplicants suffocate" a duplicant buried over the head (DupEntombed) holds their breath for the
+	/// game's 110 s, then suffocates; a mask or a suit gives air.
 	/// Bionic duplicants are not affected yet.
 	/// </summary>
 	internal static class DupAir
@@ -324,6 +326,7 @@ namespace OniDup
 		Severe,
 		NoOxygen,
 		Vacuum,
+		Buried, // the head buried in solid ground, with the mod option on: holds their breath
 	}
 
 	/// <summary>Per-duplicant state of DupAir: the zone, the breath drain and the pressure history for decompression.</summary>
@@ -360,7 +363,7 @@ namespace OniDup
 
 		internal AirZone Zone { get; private set; } = AirZone.Protected;
 		internal bool Watching => Zone != AirZone.Protected;
-		internal bool OxygenBlocked => Zone == AirZone.Severe || Zone == AirZone.NoOxygen || Zone == AirZone.Vacuum;
+		internal bool OxygenBlocked => Zone == AirZone.Severe || Zone == AirZone.NoOxygen || Zone == AirZone.Vacuum || Zone == AirZone.Buried;
 		internal bool Blocked => OxygenBlocked || CarbonDioxideLevel >= 4;
 		/// <summary>0: none, 1: stuffy air, 2: headache, 3: poisoning, 4: passing out.</summary>
 		internal int CarbonDioxideLevel { get; private set; }
@@ -437,7 +440,7 @@ namespace OniDup
 			{
 				ebullismTime = EbullismDamageEvery;
 			}
-			Decompression(Zone == AirZone.Protected);
+			Decompression(Zone == AirZone.Protected || Zone == AirZone.Buried);
 		}
 
 		private AirZone Measure(out float headPressure, out bool sealedSuit)
@@ -454,6 +457,12 @@ namespace OniDup
 			}
 			Element headElement = Grid.Element[head];
 			headPressure = DupAir.CellAir(head).Pressure;
+			if (Mod.Options.BuriedFaceSuffocates && !sealedSuit && !mask && !prefabID.HasTag(GameTags.InTransitTube) && DupEntombed.Buried(head))
+			{
+				OxygenPressure = 0f;
+				CarbonDioxide = 0f;
+				return AirZone.Buried;
+			}
 			if (sealedSuit || prefabID.HasTag(GameTags.InTransitTube) || !(headElement.IsGas || headElement.IsVacuum))
 			{
 				OxygenPressure = 0f;
@@ -540,9 +549,11 @@ namespace OniDup
 				float seconds = float.MaxValue;
 				if (OxygenBlocked)
 				{
+					// Buried: the breath held in normal air before, the game's 110 s.
 					seconds = Zone == AirZone.Vacuum ? VacuumBreathSeconds : Zone == AirZone.Severe ? SevereBreathSeconds
-						: VacuumBreathSeconds + 95f * Mathf.Min(1f, Pressure / 101.325f);
-					name = Zone == AirZone.Severe ? (string)ONIDUP.BREATH.GASPING : Zone == AirZone.Vacuum ? (string)ONIDUP.BREATH.VACUUM : (string)ONIDUP.BREATH.THINAIR;
+						: Zone == AirZone.Buried ? VacuumBreathSeconds + 95f : VacuumBreathSeconds + 95f * Mathf.Min(1f, Pressure / 101.325f);
+					name = Zone == AirZone.Severe ? (string)ONIDUP.BREATH.GASPING : Zone == AirZone.Vacuum ? (string)ONIDUP.BREATH.VACUUM
+						: Zone == AirZone.Buried ? (string)ONIDUP.BREATH.BURIED : (string)ONIDUP.BREATH.THINAIR;
 				}
 				if (CarbonDioxideLevel >= 4 && CarbonDioxideBreathSeconds < seconds)
 				{
@@ -575,7 +586,7 @@ namespace OniDup
 		/// </summary>
 		private void OxygenExcess(float dt)
 		{
-			float oxygen = Zone == AirZone.Protected ? 0f : OxygenPressure;
+			float oxygen = Zone == AirZone.Protected || Zone == AirZone.Buried ? 0f : OxygenPressure;
 			if (oxygen >= DupAir.OxygenRich)
 			{
 				richTime += dt;
