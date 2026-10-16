@@ -5,7 +5,8 @@ using OniCommon;
 namespace OniDup
 {
 	/// <summary>
-	/// A harsher life for duplicants. So far: breathing by the pressure of oxygen, hypoxia, vacuum and decompression (DupAir).
+	/// A harsher life for duplicants. So far: breathing by the pressure of oxygen, hypoxia, vacuum and decompression, Carbon Dioxide and too
+	/// much Oxygen (DupAir, DupAirOverlay); digging and building without the hiccups (DupWork).
 	/// </summary>
 	public sealed class Mod : UserMod2
 	{
@@ -16,7 +17,8 @@ namespace OniDup
 			ModLocalization.Apply(harmony, typeof(ONIDUP));
 			DupAir.Apply(harmony);
 			DupAirOverlay.Apply(harmony);
-			Debug.Log($"[OniDup] {assembly.GetName().Version}, air: {DupAir.Mode}");
+			DupWork.Apply(harmony);
+			Debug.Log($"[OniDup] {assembly.GetName().Version}, air: {DupAir.Mode}, work: {DupWork.Mode}");
 		}
 	}
 }

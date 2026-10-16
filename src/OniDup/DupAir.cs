@@ -27,8 +27,8 @@ namespace OniDup
 	/// - P below 6.3 kPa (the Armstrong limit): body fluids boil, a mask does not help: passes out in 15 s, takes 0.5 damage
 	///   per second ("Ebullism").
 	/// After passing out the game's own suffocation goes on: 120 s to death, other duplicants can resuscitate.
-	/// A drop of pressure around the duplicant by more than half and more than 30 kPa within 2 s gives "Barotrauma" (the numbers
-	/// and reaction of the game's "Popped Eardrums", which is about over-pressure) and does 10 damage.
+	/// A drop of the average pressure around the head by more than half and more than 30 kPa within 2 s gives "Decompression
+	/// Injury" (stress +20% per cycle for half a cycle, the game's popped eardrums reaction) and does 10 damage.
 	///
 	/// Carbon Dioxide, by its partial pressure in the air the duplicant breathes (only while breathing: in pure Carbon Dioxide a
 	/// duplicant holds their breath and is not poisoned; a mask or a suit protects): 1-3 kPa stuffy air, 3-5 a headache, 5-8
