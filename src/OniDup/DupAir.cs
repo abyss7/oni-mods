@@ -405,7 +405,7 @@ namespace OniDup
 			}
 			AirZone before = Zone;
 			bool wasBlocked = Blocked;
-			Zone = Measure(out float pressure, out bool sealedSuit);
+			Zone = Measure(out float pressure, out _);
 			Pressure = pressure;
 			SetEffect(DupAir.HypoxiaId, Zone == AirZone.Hypoxia);
 			SetEffect(DupAir.SevereHypoxiaId, Zone == AirZone.Severe);
@@ -437,7 +437,7 @@ namespace OniDup
 			{
 				ebullismTime = EbullismDamageEvery;
 			}
-			Decompression(pressure, sealedSuit);
+			Decompression(pressure, Zone == AirZone.Protected);
 		}
 
 		private AirZone Measure(out float headPressure, out bool sealedSuit)
@@ -619,9 +619,16 @@ namespace OniDup
 			Db.Get().Amounts.Stress.Lookup(gameObject)?.ApplyDelta(SeizureStress);
 		}
 
-		/// <summary>A sharp drop of pressure around the duplicant: barotrauma (the game's "Popped Eardrums") and damage.</summary>
-		private void Decompression(float pressure, bool sealedSuit)
+		/// <summary>A sharp drop of pressure around the duplicant: Decompression Injury and damage.</summary>
+		private void Decompression(float pressure, bool protectedHead)
 		{
+			// In a sealed suit, a transit tube or with the head in a liquid (a liquid airlock) the air around tells nothing:
+			// the history starts over, so leaving the liquid is not taken for a drop of pressure to zero.
+			if (protectedHead)
+			{
+				historyCount = 0;
+				return;
+			}
 			float highest = pressure;
 			for (int i = 0; i < historyCount; i++)
 			{
@@ -630,7 +637,7 @@ namespace OniDup
 			history[historyAt] = pressure;
 			historyAt = (historyAt + 1) % HistorySamples;
 			historyCount = Math.Min(historyCount + 1, HistorySamples);
-			if (sealedSuit || highest - pressure < DecompressionDrop || pressure > 0.5f * highest || GameClock.Instance.GetTime() - lastDecompression < DecompressionCooldown)
+			if (highest - pressure < DecompressionDrop || pressure > 0.5f * highest || GameClock.Instance.GetTime() - lastDecompression < DecompressionCooldown)
 			{
 				return;
 			}
