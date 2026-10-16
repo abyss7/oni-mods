@@ -27,6 +27,36 @@ namespace OniDup
 				public static LocString TOOLTIP = "The pressure here is so low that the moisture in this Duplicant's body is boiling away\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> won't help here, only a sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> will";
 			}
 
+			public static class STUFFYAIR
+			{
+				public static LocString NAME = "Stuffy Air";
+				public static LocString TOOLTIP = "The air here has a little too much <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> in it, making this Duplicant drowsy";
+			}
+
+			public static class CO2HEADACHE
+			{
+				public static LocString NAME = "CO₂ Headache";
+				public static LocString TOOLTIP = "The <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> in the air is giving this Duplicant a pounding headache";
+			}
+
+			public static class CO2POISONING
+			{
+				public static LocString NAME = "CO₂ Poisoning";
+				public static LocString TOOLTIP = "This Duplicant is dizzy and confused from breathing too much <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects from it";
+			}
+
+			public static class OXYGENTOXICITY
+			{
+				public static LocString NAME = "Oxygen Toxicity";
+				public static LocString TOOLTIP = "This Duplicant has been breathing <link=\"OXYGEN\">Oxygen</link> at a very high pressure for too long and their lungs burn\n\nIt fades after half a cycle at a normal pressure";
+			}
+
+			public static class OXYGENSEIZURE
+			{
+				public static LocString NAME = "Oxygen Seizure";
+				public static LocString TOOLTIP = "Breathing <link=\"OXYGEN\">Oxygen</link> at an extreme pressure gave this Duplicant a seizure";
+			}
+
 			public static class BAROTRAUMA
 			{
 				public static LocString NAME = "Decompression Injury";
@@ -40,6 +70,7 @@ namespace OniDup
 			public static LocString THINAIR = "Thin air in the lungs";
 			public static LocString GASPING = "Gasping for Air";
 			public static LocString VACUUM = "Vacuum Exposure";
+			public static LocString CARBONDIOXIDE = "CO₂ Poisoning";
 		}
 
 		public static class STATUSITEMS
@@ -54,24 +85,34 @@ namespace OniDup
 		/// <summary>"Oxygen Pressure" view of the oxygen overlay and its legend.</summary>
 		public static class OVERLAY
 		{
-			public static LocString NAME = "Oxygen Pressure";
-			public static LocString TOOLTIP = "Shows how well Duplicants can breathe the air here: the pressure of <link=\"OXYGEN\">Oxygen</link> that reaches their lungs";
+			public static LocString NAME = "Breathing Conditions";
+			public static LocString TOOLTIP = "Shows how Duplicants would fare breathing the air here: the pressure of <link=\"OXYGEN\">Oxygen</link> reaching their lungs and the <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> in it";
+			public static LocString TOXIC = "Toxic Oxygen";
+			public static LocString TOXIC_TOOLTIP = "<b>Toxic Oxygen</b>\nSo much <link=\"OXYGEN\">Oxygen</link> that Duplicants get <b>Oxygen Toxicity</b> and may have seizures";
+			public static LocString RICH = "Oxygen-Rich";
+			public static LocString RICH_TOOLTIP = "<b>Oxygen-Rich</b>\nDuplicants who stay here for half a cycle get <b>Oxygen Toxicity</b>";
 			public static LocString NORMAL = "Easy Breathing";
 			public static LocString NORMAL_TOOLTIP = "<b>Easy Breathing</b>\nEnough pressure of <link=\"OXYGEN\">Oxygen</link> to breathe freely";
-			public static LocString THIN = "Thin Air";
-			public static LocString THIN_TOOLTIP = "<b>Thin Air</b>\nDuplicants get <b>Low Oxygen</b> here\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps";
-			public static LocString LIGHTHEADED = "Lightheaded";
-			public static LocString LIGHTHEADED_TOOLTIP = "<b>Lightheaded</b>\nDuplicants slow down and grow stressed here\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps if the pressure isn't too low";
-			public static LocString GASPING = "Gasping for Air";
-			public static LocString GASPING_TOOLTIP = "<b>Gasping for Air</b>\nDuplicants can barely breathe here and pass out within minutes\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps if the pressure isn't too low";
+			public static LocString THIN = "Thin or Stuffy Air";
+			public static LocString THIN_TOOLTIP = "<b>Thin or Stuffy Air</b>\nDuplicants get <b>Low Oxygen</b>, or <b>Stuffy Air</b> from <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps";
+			public static LocString LIGHTHEADED = "Lightheaded or Headache";
+			public static LocString LIGHTHEADED_TOOLTIP = "<b>Lightheaded or Headache</b>\nToo little <link=\"OXYGEN\">Oxygen</link> or too much <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: Duplicants slow down and grow stressed\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps if the pressure isn't too low";
+			public static LocString GASPING = "Gasping or Poisoned";
+			public static LocString GASPING_TOOLTIP = "<b>Gasping or Poisoned</b>\nDuplicants can barely breathe here or are poisoned by <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps if the pressure isn't too low";
 			public static LocString UNBREATHABLE = "Unbreathable";
-			public static LocString UNBREATHABLE_TOOLTIP = "<b>Unbreathable</b>\nNot enough <link=\"OXYGEN\">Oxygen</link> to breathe at all\n\nDuplicants hold their breath and suffocate if trapped here";
+			public static LocString UNBREATHABLE_TOOLTIP = "<b>Unbreathable</b>\nNot enough <link=\"OXYGEN\">Oxygen</link> to breathe at all, or enough <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> to knock a Duplicant out\n\nDuplicants pass out and suffocate if trapped here";
 			public static LocString VACUUM = "Vacuum";
 			public static LocString VACUUM_TOOLTIP = "<b>Vacuum</b>\nThe pressure is so low that Duplicants pass out within seconds\n\nOnly a sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> protects here";
 		}
 
 		public static class DEATHS
 		{
+			public static class CARBONDIOXIDE
+			{
+				public static LocString NAME = "Carbon Dioxide Poisoning";
+				public static LocString DESCRIPTION = "{Target} breathed too much Carbon Dioxide.";
+			}
+
 			public static class DECOMPRESSION
 			{
 				public static LocString NAME = "Vacuum Exposure";

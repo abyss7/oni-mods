@@ -28,7 +28,16 @@ namespace OniDup
 	///   per second ("Ebullism").
 	/// After passing out the game's own suffocation goes on: 120 s to death, other duplicants can resuscitate.
 	/// A drop of pressure around the duplicant by more than half and more than 30 kPa within 2 s gives "Barotrauma" (the numbers
-	/// and reaction of the game's "Popped Eardrums", which is about over-pressure) and does 10 damage. Bionic duplicants are not affected yet.
+	/// and reaction of the game's "Popped Eardrums", which is about over-pressure) and does 10 damage.
+	///
+	/// Carbon Dioxide, by its partial pressure in the air the duplicant breathes (only while breathing: in pure Carbon Dioxide a
+	/// duplicant holds their breath and is not poisoned; a mask or a suit protects): 1-3 kPa stuffy air, 3-5 a headache, 5-8
+	/// poisoning, 8 and more passing out within a minute, then the game's suffocation (death: Carbon Dioxide Poisoning).
+	///
+	/// Too much Oxygen: the game's air is pure Oxygen (1.8 kg in a cell is normal air), so the limits of the real world are moved
+	/// up: pO2 of 2 atm and more for half a cycle in a row gives Oxygen Toxicity, which goes after half a cycle at a normal
+	/// pressure; at 3 atm and more there is a 20% chance of a seizure every minute (knocked off their feet for about 10 s).
+	/// Bionic duplicants are not affected yet.
 	/// </summary>
 	internal static class DupAir
 	{
@@ -36,10 +45,15 @@ namespace OniDup
 		internal const float Vapour = 6.3f;
 		internal const float Normal = 15f, Thin = 11f, Hypoxic = 8f, Severe = 6f;
 		internal const string HypoxiaId = "OniDupHypoxia", SevereHypoxiaId = "OniDupSevereHypoxia", EbullismId = "OniDupEbullism", BarotraumaId = "OniDupBarotrauma";
+		internal const float Stuffy = 1f, Headache = 3f, Poisoning = 5f, PassingOut = 8f; // kPa of Carbon Dioxide
+		internal const float OxygenRich = 2f * 101.325f, OxygenToxic = 3f * 101.325f;     // kPa of Oxygen in the lungs
+		internal const string StuffyId = "OniDupStuffyAir", HeadacheId = "OniDupCarbonDioxideHeadache", PoisoningId = "OniDupCarbonDioxidePoisoning",
+			ToxicityId = "OniDupOxygenToxicity", SeizureId = "OniDupOxygenSeizure";
 
 		internal static string Mode { get; private set; } = "off";
 		internal static StatusItem VacuumStatus { get; private set; }
 		internal static Death Decompression { get; private set; }
+		internal static Death CarbonDioxide { get; private set; }
 
 		internal static void Apply(Harmony harmony)
 		{
@@ -211,17 +225,63 @@ namespace OniDup
 				StatusItem.IconType.Exclamation, NotificationType.DuplicantThreatening, false, OverlayModes.None.ID);
 			Decompression = new Death("OniDupDecompression", Db.Get().Deaths, ONIDUP.DEATHS.DECOMPRESSION.NAME, ONIDUP.DEATHS.DECOMPRESSION.DESCRIPTION,
 				"death_suffocation", "dead_on_back");
+			CarbonDioxide = new Death("OniDupCarbonDioxide", Db.Get().Deaths, ONIDUP.DEATHS.CARBONDIOXIDE.NAME, ONIDUP.DEATHS.CARBONDIOXIDE.DESCRIPTION,
+				"death_suffocation", "dead_on_back");
+
+			// Carbon Dioxide: stuffy air, a headache, poisoning.
+			name = ONIDUP.EFFECTS.STUFFYAIR.NAME;
+			var stuffy = new Effect(StuffyId, name, ONIDUP.EFFECTS.STUFFYAIR.TOOLTIP, 0f, true, false, true);
+			stuffy.Add(new AttributeModifier(stress, 5f / 600f, name));
+			stuffy.Add(new AttributeModifier(attributes.Learning.Id, -2f, name));
+			Db.Get().effects.Add(stuffy);
+
+			name = ONIDUP.EFFECTS.CO2HEADACHE.NAME;
+			var headache = new Effect(HeadacheId, name, ONIDUP.EFFECTS.CO2HEADACHE.TOOLTIP, 0f, true, false, true);
+			headache.Add(new AttributeModifier(stress, 15f / 600f, name));
+			headache.Add(new AttributeModifier(attributes.Learning.Id, -3f, name));
+			foreach (Klei.AI.Attribute attribute in work)
+			{
+				headache.Add(new AttributeModifier(attribute.Id, -2f, name));
+			}
+			Db.Get().effects.Add(headache);
+
+			name = ONIDUP.EFFECTS.CO2POISONING.NAME;
+			var poisoning = new Effect(PoisoningId, name, ONIDUP.EFFECTS.CO2POISONING.TOOLTIP, 0f, true, false, true, Db.Get().Emotes.Minion.Cough, 20f);
+			poisoning.Add(new AttributeModifier(stress, 25f / 600f, name));
+			poisoning.Add(new AttributeModifier(attributes.Athletics.Id, -5f, name));
+			poisoning.Add(new AttributeModifier(attributes.Learning.Id, -4f, name));
+			foreach (Klei.AI.Attribute attribute in work)
+			{
+				poisoning.Add(new AttributeModifier(attribute.Id, -4f, name));
+			}
+			Db.Get().effects.Add(poisoning);
+
+			// Too much Oxygen: toxicity after half a cycle, seizures at the highest pressures.
+			name = ONIDUP.EFFECTS.OXYGENTOXICITY.NAME;
+			var toxicity = new Effect(ToxicityId, name, ONIDUP.EFFECTS.OXYGENTOXICITY.TOOLTIP, 0f, true, true, true);
+			toxicity.Add(new AttributeModifier(stress, 10f / 600f, name));
+			toxicity.Add(new AttributeModifier(attributes.Athletics.Id, -3f, name));
+			Db.Get().effects.Add(toxicity);
+
+			name = ONIDUP.EFFECTS.OXYGENSEIZURE.NAME;
+			var seizure = new Effect(SeizureId, name, ONIDUP.EFFECTS.OXYGENSEIZURE.TOOLTIP, 120f, true, true, true);
+			seizure.Add(new AttributeModifier(stress, 20f / 600f, name));
+			Db.Get().effects.Add(seizure);
 		}
 
-		/// <summary>A duplicant who passed out in a vacuum and was not rescued dies of the vacuum, not of plain suffocation.</summary>
+		/// <summary>
+		/// A duplicant who passed out in a vacuum or from Carbon Dioxide and was not rescued dies of that, not of plain suffocation.
+		/// </summary>
 		private static bool DeathInVacuum(SuffocationMonitor.Instance __instance)
 		{
 			DupAirMonitor monitor = DupAirMonitor.Of(__instance.oxygenBreather);
-			if (monitor == null || monitor.Zone != AirZone.Vacuum || Decompression == null)
+			Death death = monitor == null ? null : monitor.Zone == AirZone.Vacuum ? Decompression
+				: monitor.CarbonDioxideLevel >= 4 && !monitor.OxygenBlocked ? CarbonDioxide : null;
+			if (death == null)
 			{
 				return true;
 			}
-			__instance.gameObject.GetSMI<DeathMonitor.Instance>().Kill(Decompression);
+			__instance.gameObject.GetSMI<DeathMonitor.Instance>().Kill(death);
 			return false;
 		}
 
@@ -273,7 +333,9 @@ namespace OniDup
 		private const float DecompressionDrop = 30f, DecompressionCooldown = 10f, DecompressionDamage = 10f, EbullismDamagePerSecond = 0.5f;
 		// Ebullism damage comes in portions: every hit plays the game's flinch, every 0.2 s it would never stop.
 		private const float EbullismDamageEvery = 5f;
-		private const float VacuumBreathSeconds = 15f, SevereBreathSeconds = 180f;
+		private const float VacuumBreathSeconds = 15f, SevereBreathSeconds = 180f, CarbonDioxideBreathSeconds = 60f;
+		private const float ToxicityAfter = 300f, ToxicityRecovery = 300f, SeizureEvery = 60f, SeizureChance = 0.2f, SeizureStress = 5f;
+		private const int SeizureShakes = 4; // the game's electric shock reaction, about 10 s
 		private const int AirChangedEvent = -933153513; // GameHashes.OxygenBreatherHasAirChanged
 
 		private static readonly System.Collections.Generic.Dictionary<OxygenBreather, DupAirMonitor> byBreather =
@@ -293,11 +355,16 @@ namespace OniDup
 		private float lastDecompression = -1000f;
 		private float ebullismTime = EbullismDamageEvery;
 		private AttributeModifier drain;
-		private AirZone zoneOfDrain;
+		private string drainName;
+		private float richTime, normalTime, seizureTime;
 
 		internal AirZone Zone { get; private set; } = AirZone.Protected;
 		internal bool Watching => Zone != AirZone.Protected;
-		internal bool Blocked => Zone == AirZone.Severe || Zone == AirZone.NoOxygen || Zone == AirZone.Vacuum;
+		internal bool OxygenBlocked => Zone == AirZone.Severe || Zone == AirZone.NoOxygen || Zone == AirZone.Vacuum;
+		internal bool Blocked => OxygenBlocked || CarbonDioxideLevel >= 4;
+		/// <summary>0: none, 1: stuffy air, 2: headache, 3: poisoning, 4: passing out.</summary>
+		internal int CarbonDioxideLevel { get; private set; }
+		internal float CarbonDioxide { get; private set; }
 		internal float Pressure { get; private set; }
 		internal float OxygenPressure { get; private set; }
 
@@ -344,6 +411,14 @@ namespace OniDup
 			SetEffect(DupAir.SevereHypoxiaId, Zone == AirZone.Severe);
 			SetEffect(DupAir.EbullismId, Zone == AirZone.Vacuum);
 			SetVacuumStatus(Zone == AirZone.Vacuum);
+			// Carbon Dioxide is inhaled only while breathing.
+			bool breathing = Zone == AirZone.Normal || Zone == AirZone.Thin || Zone == AirZone.Hypoxia;
+			float carbon = breathing ? CarbonDioxide : 0f;
+			CarbonDioxideLevel = carbon >= DupAir.PassingOut ? 4 : carbon >= DupAir.Poisoning ? 3 : carbon >= DupAir.Headache ? 2 : carbon >= DupAir.Stuffy ? 1 : 0;
+			SetEffect(DupAir.StuffyId, CarbonDioxideLevel == 1);
+			SetEffect(DupAir.HeadacheId, CarbonDioxideLevel == 2);
+			SetEffect(DupAir.PoisoningId, CarbonDioxideLevel >= 3);
+			OxygenExcess(dt);
 			if (Blocked != wasBlocked)
 			{
 				Trigger(AirChangedEvent, Blocked ? BoxedBools.False : BoxedBools.True);
@@ -381,6 +456,8 @@ namespace OniDup
 			headPressure = DupAir.CellAir(head).Pressure;
 			if (sealedSuit || prefabID.HasTag(GameTags.InTransitTube) || !(headElement.IsGas || headElement.IsVacuum))
 			{
+				OxygenPressure = 0f;
+				CarbonDioxide = 0f;
 				return AirZone.Protected;
 			}
 			if (headPressure < Vapour)
@@ -388,7 +465,7 @@ namespace OniDup
 				return AirZone.Vacuum;
 			}
 			// The best cell around the head, as the game picks it for breathing.
-			float best = 0f;
+			float best = 0f, bestCarbon = 0f;
 			foreach (CellOffset offset in GasBreatherFromWorldProvider.DEFAULT_BREATHABLE_OFFSETS)
 			{
 				int around = Grid.OffsetCell(cell, offset);
@@ -396,9 +473,16 @@ namespace OniDup
 				{
 					continue;
 				}
-				best = Mathf.Max(best, DupAir.Lungs(DupAir.CellAir(around), mask));
+				DupAir.Air air = DupAir.CellAir(around);
+				float lungs = DupAir.Lungs(air, mask);
+				if (lungs > best)
+				{
+					best = lungs;
+					bestCarbon = air.CarbonDioxide;
+				}
 			}
 			OxygenPressure = best;
+			CarbonDioxide = mask ? 0f : bestCarbon;
 			if (best >= DupAir.Normal) return AirZone.Normal;
 			if (best >= DupAir.Thin) return AirZone.Thin;
 			if (best >= DupAir.Hypoxic) return AirZone.Hypoxia;
@@ -449,14 +533,25 @@ namespace OniDup
 		private void UpdateDrain()
 		{
 			float target = 0f;
+			string name = null;
 			if (Blocked)
 			{
-				float seconds = Zone == AirZone.Vacuum ? VacuumBreathSeconds : Zone == AirZone.Severe ? SevereBreathSeconds
-					: VacuumBreathSeconds + 95f * Mathf.Min(1f, Pressure / 101.325f);
-				float rate = DUPLICANTSTATS.STANDARD.Breath.BREATH_RATE;
-				target = rate - DUPLICANTSTATS.STANDARD.Breath.BREATH_BAR_TOTAL_AMOUNT / seconds;
+				// The fastest of the reasons not to breathe wins.
+				float seconds = float.MaxValue;
+				if (OxygenBlocked)
+				{
+					seconds = Zone == AirZone.Vacuum ? VacuumBreathSeconds : Zone == AirZone.Severe ? SevereBreathSeconds
+						: VacuumBreathSeconds + 95f * Mathf.Min(1f, Pressure / 101.325f);
+					name = Zone == AirZone.Severe ? (string)ONIDUP.BREATH.GASPING : Zone == AirZone.Vacuum ? (string)ONIDUP.BREATH.VACUUM : (string)ONIDUP.BREATH.THINAIR;
+				}
+				if (CarbonDioxideLevel >= 4 && CarbonDioxideBreathSeconds < seconds)
+				{
+					seconds = CarbonDioxideBreathSeconds;
+					name = ONIDUP.BREATH.CARBONDIOXIDE;
+				}
+				target = DUPLICANTSTATS.STANDARD.Breath.BREATH_RATE - DUPLICANTSTATS.STANDARD.Breath.BREATH_BAR_TOTAL_AMOUNT / seconds;
 			}
-			if (drain != null && Mathf.Abs(drain.Value - target) < 0.01f && zoneOfDrain == Zone)
+			if (drain != null && Mathf.Abs(drain.Value - target) < 0.01f && drainName == name)
 			{
 				return;
 			}
@@ -468,11 +563,60 @@ namespace OniDup
 			}
 			if (target != 0f)
 			{
-				string name = Zone == AirZone.Severe ? (string)ONIDUP.BREATH.GASPING : Zone == AirZone.Vacuum ? (string)ONIDUP.BREATH.VACUUM : (string)ONIDUP.BREATH.THINAIR;
 				drain = new AttributeModifier(Db.Get().Amounts.Breath.deltaAttribute.Id, target, name);
 				attributes.Add(drain);
-				zoneOfDrain = Zone;
+				drainName = name;
 			}
+		}
+
+		/// <summary>
+		/// Too much Oxygen in the lungs: Oxygen Toxicity after half a cycle in a row at 2 atm and more, gone after half a cycle below;
+		/// at 3 atm and more a seizure every minute with a 20% chance. Protected duplicants breathe a normal pressure.
+		/// </summary>
+		private void OxygenExcess(float dt)
+		{
+			float oxygen = Zone == AirZone.Protected ? 0f : OxygenPressure;
+			if (oxygen >= DupAir.OxygenRich)
+			{
+				richTime += dt;
+				normalTime = 0f;
+				if (richTime >= ToxicityAfter)
+				{
+					SetEffect(DupAir.ToxicityId, true);
+				}
+			}
+			else
+			{
+				richTime = 0f;
+				normalTime += dt;
+				if (normalTime >= ToxicityRecovery)
+				{
+					SetEffect(DupAir.ToxicityId, false);
+				}
+			}
+			if (oxygen < DupAir.OxygenToxic)
+			{
+				seizureTime = 0f;
+				return;
+			}
+			seizureTime += dt;
+			if (seizureTime < SeizureEvery)
+			{
+				return;
+			}
+			seizureTime = 0f;
+			if (UnityEngine.Random.value >= SeizureChance)
+			{
+				return;
+			}
+			// The game's electric shock reaction, repeated: the duplicant shakes and drops what they were doing.
+			ChoreProvider provider = GetComponent<ChoreProvider>();
+			if (provider != null)
+			{
+				new EmoteChore(provider, Db.Get().ChoreTypes.EmoteHighPriority, Db.Get().Emotes.Minion.Shock, SeizureShakes);
+			}
+			effects?.Add(DupAir.SeizureId, true);
+			Db.Get().Amounts.Stress.Lookup(gameObject)?.ApplyDelta(SeizureStress);
 		}
 
 		/// <summary>A sharp drop of pressure around the duplicant: barotrauma (the game's "Popped Eardrums") and damage.</summary>
