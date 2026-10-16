@@ -27,6 +27,7 @@ namespace OniDup
 			DupAirOverlay.Apply(harmony);
 			DupWork.Apply(harmony);
 			DupEntombed.Apply(harmony);
+			DupCases.Apply(harmony);
 			Debug.Log($"[OniDup] {assembly.GetName().Version}, air: {DupAir.Mode}, work: {DupWork.Mode}, entombed: {DupEntombed.Mode}, buried face suffocates: {Options.BuriedFaceSuffocates}");
 		}
 	}

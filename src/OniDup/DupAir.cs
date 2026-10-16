@@ -64,8 +64,10 @@ namespace OniDup
 				harmony.Patch(AccessTools.Method(typeof(MinionConfig), nameof(MinionConfig.CreatePrefab)), postfix: new HarmonyMethod(typeof(DupAir), nameof(AddMonitor)));
 				harmony.Patch(AccessTools.Method(typeof(Db), nameof(Db.Initialize)), postfix: new HarmonyMethod(typeof(DupAir), nameof(AddEffects)));
 				harmony.Patch(AccessTools.Method(typeof(OxygenBreather), nameof(OxygenBreather.IsLowOxygen)), postfix: new HarmonyMethod(typeof(DupAir), nameof(LowOxygen)));
-				harmony.Patch(AccessTools.PropertyGetter(typeof(OxygenBreather), nameof(OxygenBreather.HasOxygen)), postfix: new HarmonyMethod(typeof(DupAir), nameof(HasOxygen)));
-				harmony.Patch(AccessTools.PropertyGetter(typeof(OxygenBreather), nameof(OxygenBreather.IsOutOfOxygen)), postfix: new HarmonyMethod(typeof(DupAir), nameof(OutOfOxygen)));
+				harmony.Patch(AccessTools.Method(typeof(OxygenBreather), nameof(OxygenBreather.Sim200ms)), prefix: new HarmonyMethod(typeof(DupAir), nameof(Breathe)));
+				harmony.Patch(AccessTools.Method(typeof(SuffocationMonitor.Instance), nameof(SuffocationMonitor.Instance.CanBreath)), postfix: new HarmonyMethod(typeof(DupAir), nameof(CanBreathe)));
+				harmony.Patch(AccessTools.Method(typeof(GasBreatherFromWorldProvider), nameof(GasBreatherFromWorldProvider.GetBestBreathableCellAroundSpecificCell),
+					new[] { typeof(int), typeof(CellOffset[]), typeof(OxygenBreather), typeof(float).MakeByRefType() }), postfix: new HarmonyMethod(typeof(DupAir), nameof(BreathableAround)));
 				harmony.Patch(AccessTools.Method(typeof(SuffocationMonitor.Instance), nameof(SuffocationMonitor.Instance.Kill)), prefix: new HarmonyMethod(typeof(DupAir), nameof(DeathInVacuum)));
 				Mode = "on";
 			}
@@ -104,7 +106,7 @@ namespace OniDup
 			Debug.Log($"{ModContext.Tag} air: {Sources}");
 		}
 
-		private static float Partial(Element gas, float mass, float temperature)
+		internal static float Partial(Element gas, float mass, float temperature)
 		{
 			return scale != null ? scale(gas.idx, mass, temperature) : mass * KiloPascalPerKg;
 		}
@@ -298,21 +300,71 @@ namespace OniDup
 			}
 		}
 
-		private static void HasOxygen(OxygenBreather __instance, ref bool __result)
+		/// <summary>
+		/// A duplicant who cannot breathe here holds their breath: does not inhale (nor exhale Carbon Dioxide), and the game sees
+		/// no air (its flag behind HasOxygen; the getters themselves are too small to patch, the JIT inlines them), so its own
+		/// suffocation runs. When breathing is possible again the game's own breathing finds air and turns the flag back.
+		/// </summary>
+		private static bool Breathe(OxygenBreather __instance)
 		{
 			DupAirMonitor monitor = DupAirMonitor.Of(__instance);
-			if (monitor != null && monitor.Blocked)
+			if (monitor == null || !monitor.Blocked)
 			{
-				__result = false;
+				return true;
+			}
+			HoldBreath(__instance);
+			return false;
+		}
+
+		/// <summary>
+		/// The game lets a duplicant "catch their breath" wherever it finds Oxygen by its own measure; in air full of Carbon
+		/// Dioxide or too thin to breathe that would refill the breath. A duplicant who cannot breathe here cannot catch it either.
+		/// </summary>
+		private static void CanBreathe(SuffocationMonitor.Instance __instance, ref bool __result)
+		{
+			if (__result)
+			{
+				DupAirMonitor monitor = DupAirMonitor.Of(__instance.oxygenBreather);
+				if (monitor != null && monitor.Blocked)
+				{
+					__result = false;
+				}
 			}
 		}
 
-		private static void OutOfOxygen(OxygenBreather __instance, ref bool __result)
+		/// <summary>
+		/// Where the game looks for air to breathe or to catch the breath (around a cell): only where a duplicant could breathe
+		/// by this mod's scale, not in air too thin or too full of Carbon Dioxide. So a duplicant out of breath goes to look for
+		/// good air instead of "catching their breath" in bad air.
+		/// </summary>
+		private static void BreathableAround(int theSpecificCell, CellOffset[] breathRange, OxygenBreather breather, ref GasBreatherFromWorldProvider.BreathableCellData __result)
 		{
-			DupAirMonitor monitor = DupAirMonitor.Of(__instance);
-			if (monitor != null && monitor.Blocked)
+			if (!__result.IsBreathable || breather == null || DupAirMonitor.Of(breather) == null)
 			{
-				__result = true;
+				return;
+			}
+			foreach (CellOffset offset in breathRange ?? GasBreatherFromWorldProvider.DEFAULT_BREATHABLE_OFFSETS)
+			{
+				int cell = Grid.OffsetCell(theSpecificCell, offset);
+				if (Grid.IsValidCell(cell) && Grid.Element[cell].IsGas)
+				{
+					Air air = CellAir(cell);
+					if (Lungs(air) >= Hypoxic && air.CarbonDioxide < PassingOut)
+					{
+						return;
+					}
+				}
+			}
+			__result.IsBreathable = false;
+		}
+
+		internal static void HoldBreath(OxygenBreather breather)
+		{
+			breather.hasAirTimer.Stop();
+			if (breather.hasAir)
+			{
+				breather.hasAir = false;
+				breather.Trigger((int)GameHashes.OxygenBreatherHasAirChanged, BoxedBools.False);
 			}
 		}
 	}
@@ -339,7 +391,6 @@ namespace OniDup
 		private const float VacuumBreathSeconds = 15f, SevereBreathSeconds = 180f, CarbonDioxideBreathSeconds = 60f;
 		private const float ToxicityAfter = 300f, ToxicityRecovery = 300f, SeizureEvery = 60f, SeizureChance = 0.2f, SeizureStress = 5f;
 		private const int SeizureShakes = 4; // the game's electric shock reaction, about 10 s
-		private const int AirChangedEvent = -933153513; // GameHashes.OxygenBreatherHasAirChanged
 
 		private static readonly System.Collections.Generic.Dictionary<OxygenBreather, DupAirMonitor> byBreather =
 			new System.Collections.Generic.Dictionary<OxygenBreather, DupAirMonitor>();
@@ -359,6 +410,7 @@ namespace OniDup
 		private float ebullismTime = EbullismDamageEvery;
 		private AttributeModifier drain;
 		private string drainName;
+		internal string DrainName => drain != null ? drainName : null;
 		private float richTime, normalTime, seizureTime;
 
 		internal AirZone Zone { get; private set; } = AirZone.Protected;
@@ -422,9 +474,9 @@ namespace OniDup
 			SetEffect(DupAir.HeadacheId, CarbonDioxideLevel == 2);
 			SetEffect(DupAir.PoisoningId, CarbonDioxideLevel >= 3);
 			OxygenExcess(dt);
-			if (Blocked != wasBlocked)
+			if (Blocked && !wasBlocked)
 			{
-				Trigger(AirChangedEvent, Blocked ? BoxedBools.False : BoxedBools.True);
+				DupAir.HoldBreath(breather);
 			}
 			UpdateDrain();
 			if (Zone == AirZone.Vacuum && health != null)

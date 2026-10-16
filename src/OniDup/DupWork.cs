@@ -32,7 +32,7 @@ namespace OniDup
 
 		internal static string Mode { get; private set; } = "off";
 
-		private static int escapes, swings, resumes, rerouted, walls;
+		internal static int escapes, swings, resumes, rerouted, walls;
 		private static readonly HashSet<WorkerBase> stopping = new HashSet<WorkerBase>();
 		private static float lastReport = float.MinValue;
 
