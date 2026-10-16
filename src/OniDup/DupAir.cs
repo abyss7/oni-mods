@@ -437,7 +437,7 @@ namespace OniDup
 			{
 				ebullismTime = EbullismDamageEvery;
 			}
-			Decompression(pressure, Zone == AirZone.Protected);
+			Decompression(Zone == AirZone.Protected);
 		}
 
 		private AirZone Measure(out float headPressure, out bool sealedSuit)
@@ -619,8 +619,42 @@ namespace OniDup
 			Db.Get().Amounts.Stress.Lookup(gameObject)?.ApplyDelta(SeizureStress);
 		}
 
+		/// <summary>
+		/// Pressure around the head: the average over the gas and vacuum cells of the 3x3 square around it. Neighbouring cells of
+		/// the game's gas often differ a lot in pressure (a thin cell by a door), while real air evens out at once; a single
+		/// thin cell on the way is not a decompression, leaving a pressurised area is.
+		/// </summary>
+		private float AmbientPressure()
+		{
+			int head = Grid.CellAbove(Grid.PosToCell(this));
+			float sum = 0f;
+			int count = 0;
+			for (int dy = -1; dy <= 1; dy++)
+			{
+				for (int dx = -1; dx <= 1; dx++)
+				{
+					int around = Grid.OffsetCell(head, dx, dy);
+					if (!Grid.IsValidCell(around))
+					{
+						continue;
+					}
+					Element element = Grid.Element[around];
+					if (element.IsGas)
+					{
+						sum += DupAir.CellAir(around).Pressure;
+						count++;
+					}
+					else if (element.IsVacuum)
+					{
+						count++;
+					}
+				}
+			}
+			return count == 0 ? 0f : sum / count;
+		}
+
 		/// <summary>A sharp drop of pressure around the duplicant: Decompression Injury and damage.</summary>
-		private void Decompression(float pressure, bool protectedHead)
+		private void Decompression(bool protectedHead)
 		{
 			// In a sealed suit, a transit tube or with the head in a liquid (a liquid airlock) the air around tells nothing:
 			// the history starts over, so leaving the liquid is not taken for a drop of pressure to zero.
@@ -629,6 +663,7 @@ namespace OniDup
 				historyCount = 0;
 				return;
 			}
+			float pressure = AmbientPressure();
 			float highest = pressure;
 			for (int i = 0; i < historyCount; i++)
 			{
