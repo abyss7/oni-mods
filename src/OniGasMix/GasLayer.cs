@@ -80,6 +80,7 @@ namespace OniGasMix
 				// The game shows only the cell's main gas. The mixture composition is added to the tooltip under the cursor
 				// and to the selected-cell panel, and the oxygen overlay gets a gas selection. A failure in these
 				// interface patches must not get in the way of the layer itself.
+				GasMixture.Publish();
 				foreach ((string name, Action<Harmony> apply) in new (string, Action<Harmony>)[] { (nameof(GasLayerOverlay), GasLayerOverlay.Apply), (nameof(GasLayerBreathing), GasLayerBreathing.Apply), (nameof(GasLayerLogic), GasLayerLogic.Apply), (nameof(GasLayerCases), GasLayerCases.Apply) })
 				{
 					try

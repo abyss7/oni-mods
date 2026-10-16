@@ -41,12 +41,12 @@ namespace OniDup
 			{
 				return Color.black;
 			}
-			float pressure = DupAir.CellPressure(cell);
-			if (pressure < DupAir.Vapour)
+			DupAir.Air air = DupAir.CellAir(cell);
+			if (air.Pressure < DupAir.Vapour)
 			{
 				return VacuumColour();
 			}
-			float oxygen = DupAir.CellOxygenPressure(cell, pressure);
+			float oxygen = DupAir.Lungs(air);
 			return oxygen < DupAir.Severe ? (Color)SimDebugView.Instance.unbreathableColour : Scale(oxygen);
 		}
 

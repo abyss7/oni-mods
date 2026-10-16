@@ -16,6 +16,26 @@ namespace OniPressure
 	/// </summary>
 	internal static class CellPressure
 	{
+		/// <summary>
+		/// Partial pressure of a gas for other mods, without a reference to this one (they find it in the application domain
+		/// data): element index, mass in the cell (kg), temperature (K) to kPa, by this mod's setting: by mass (1.8 kg of any gas
+		/// is one atmosphere) or by molecules (n R T in one cubic metre, with the game's molar masses), as the phase rules count.
+		/// </summary>
+		internal const string SharedKey = "OniMods.PressureScale.1";
+
+		internal static void Publish(bool byMass)
+		{
+			AppDomain.CurrentDomain.SetData(SharedKey, (Func<ushort, float, float, float>)((element, mass, temperature) =>
+			{
+				if (byMass)
+				{
+					return mass / 1.8f * 101.325f;
+				}
+				float molar = element < ElementLoader.elements.Count ? ElementLoader.elements[element].molarMass : 0f;
+				return molar > 0f ? mass / molar * 8.314462f * temperature : 0f;
+			}));
+		}
+
 		/// <summary>Mass of the cell's gas in kilograms; zero for vacuum. Not valid for liquids and solids.</summary>
 		internal static float Gas(int cell)
 		{

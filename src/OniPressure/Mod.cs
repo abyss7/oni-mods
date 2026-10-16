@@ -25,6 +25,7 @@ namespace OniPressure
 			ModLocalization.Apply(harmony, typeof(ONIPRESSURE));
 			PressureSurvey.Apply(harmony);
 			PhaseRules.Apply(harmony);
+			CellPressure.Publish(Options.PressureByMass);
 			Debug.Log($"[OniPressure] {assembly.GetName().Version}, phase rules: {PhaseRules.Mode}, survey {(PressureSurvey.Enabled ? "on" : "off")}");
 		}
 	}

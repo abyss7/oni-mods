@@ -204,6 +204,35 @@ namespace OniGasMix
 			}
 		}
 
+		/// <summary>
+		/// Composition of a cell for other mods, without a reference to this one (they find it in the application domain data):
+		/// fills the gases and their masses, returns how many (at most the arrays' length). A cell without a mixture gives its
+		/// main gas. Safe to call from worker threads, like the overlay does.
+		/// </summary>
+		internal const string SharedKey = "OniMods.GasComposition.1";
+
+		internal static void Publish()
+		{
+			AppDomain.CurrentDomain.SetData(SharedKey, (Func<int, ushort[], float[], int>)Composition);
+		}
+
+		private static int Composition(int cell, ushort[] elements, float[] masses)
+		{
+			if (!Grid.IsValidCell(cell) || !Grid.Element[cell].IsGas)
+			{
+				return 0;
+			}
+			int count = 0;
+			Gases gases = Of(cell);
+			while (count < elements.Length && gases.Next(out Element gas, out float mass))
+			{
+				elements[count] = gas.idx;
+				masses[count] = mass;
+				count++;
+			}
+			return count;
+		}
+
 		internal static Gases Of(int cell)
 		{
 			return new Gases(cell);

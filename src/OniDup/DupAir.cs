@@ -60,25 +60,108 @@ namespace OniDup
 			}
 		}
 
-		/// <summary>Total gas pressure of a cell, kPa, on the game's mass scale; 0 for a vacuum, a liquid or a solid.</summary>
-		internal static float CellPressure(int cell)
+		/// <summary>Partial pressures of a cell's air, kPa.</summary>
+		internal struct Air
 		{
-			return Grid.IsValidCell(cell) && Grid.Element[cell].IsGas ? Grid.Mass[cell] * KiloPascalPerKg : 0f;
+			internal float Pressure, Oxygen, CarbonDioxide;
+		}
+
+		// Shared by the other mods through the application domain data (no reference between the mods): the pressure mod's
+		// scale (by mass or by molecules, as its phase rules count) and the gas mixture mod's composition of a cell.
+		private static Func<ushort, float, float, float> scale;
+		private static Func<int, ushort[], float[], int> composition;
+		private static bool lookedUp;
+		[ThreadStatic] private static ushort[] gasElements;
+		[ThreadStatic] private static float[] gasMasses;
+
+		internal static string Sources => $"pressure scale {(scale != null ? "of the pressure mod" : "by mass")}, composition {(composition != null ? "of the gas mixture mod" : "by the main gas")}";
+
+		private static void LookUp()
+		{
+			if (lookedUp)
+			{
+				return;
+			}
+			scale = AppDomain.CurrentDomain.GetData("OniMods.PressureScale.1") as Func<ushort, float, float, float>;
+			composition = AppDomain.CurrentDomain.GetData("OniMods.GasComposition.1") as Func<int, ushort[], float[], int>;
+			lookedUp = true;
+			Debug.Log($"{ModContext.Tag} air: {Sources}");
+		}
+
+		private static float Partial(Element gas, float mass, float temperature)
+		{
+			return scale != null ? scale(gas.idx, mass, temperature) : mass * KiloPascalPerKg;
 		}
 
 		/// <summary>
-		/// Pressure of Oxygen reaching the lungs from this cell's air, kPa: (P - 6.3) times the share of breathable gas (by the gas
-		/// mixture mod's composition if installed), or P - 6.3 with an oxygen mask.
+		/// Pressure of a cell's air and the partial pressures of breathable gas (Oxygen, Polluted Oxygen) and Carbon Dioxide, kPa.
+		/// Zero for a vacuum, a liquid or a solid. Called from worker threads by the overlay.
 		/// </summary>
-		internal static float CellOxygenPressure(int cell, float pressure, bool mask = false)
+		internal static Air CellAir(int cell)
 		{
-			float total = Grid.Mass[cell];
-			if (!(total > 0f) || pressure <= Vapour)
+			LookUp();
+			Air air = default;
+			if (!Grid.IsValidCell(cell) || !Grid.Element[cell].IsGas)
+			{
+				return air;
+			}
+			float temperature = Grid.Temperature[cell];
+			int count = 0;
+			if (composition != null)
+			{
+				if (gasElements == null)
+				{
+					gasElements = new ushort[32];
+					gasMasses = new float[32];
+				}
+				count = composition(cell, gasElements, gasMasses);
+			}
+			if (count == 0)
+			{
+				Add(ref air, Grid.Element[cell], Grid.Mass[cell], temperature);
+				return air;
+			}
+			for (int i = 0; i < count; i++)
+			{
+				Add(ref air, ElementLoader.elements[gasElements[i]], gasMasses[i], temperature);
+			}
+			return air;
+		}
+
+		private static void Add(ref Air air, Element gas, float mass, float temperature)
+		{
+			float pressure = Partial(gas, mass, temperature);
+			air.Pressure += pressure;
+			if (gas.HasTag(GameTags.Breathable))
+			{
+				air.Oxygen += pressure;
+			}
+			if (gas.id == SimHashes.CarbonDioxide)
+			{
+				air.CarbonDioxide += pressure;
+			}
+		}
+
+		/// <summary>Mass of pure Oxygen in a cell at room temperature that gives this pressure, kg (on the scale in use).</summary>
+		internal static float OxygenMassFor(float pressure)
+		{
+			LookUp();
+			Element oxygen = ElementLoader.FindElementByHash(SimHashes.Oxygen);
+			float perKg = oxygen != null ? Partial(oxygen, 1f, 293.15f) : KiloPascalPerKg;
+			return perKg > 0f ? pressure / perKg : pressure / KiloPascalPerKg;
+		}
+
+		/// <summary>
+		/// Pressure of Oxygen reaching the lungs from this air, kPa: (P - 6.3) times the share of breathable gas in the pressure,
+		/// or P - 6.3 with an oxygen mask (pure Oxygen at the pressure around).
+		/// </summary>
+		internal static float Lungs(Air air, bool mask = false)
+		{
+			if (!(air.Pressure > Vapour))
 			{
 				return 0f;
 			}
-			float share = mask ? 1f : Mathf.Clamp01(GasBreatherFromWorldProvider.GetBreathableCellMass(cell, out _) / total);
-			return (pressure - Vapour) * share;
+			return (air.Pressure - Vapour) * (mask ? 1f : air.Oxygen / air.Pressure);
 		}
 
 		private static void AddMonitor(GameObject __result)
@@ -231,8 +314,8 @@ namespace OniDup
 				byBreather[breather] = this;
 				// The game's own "where can one breathe" checks (safe cells, where to catch breath) by the mass of breathable gas
 				// in a cell: for pure Oxygen the same limits as the zones (pO2 6 and 15 kPa).
-				breather.noOxygenThreshold = (Severe + Vapour) / DupAir.KiloPascalPerKg;
-				breather.lowOxygenThreshold = (DupAir.Normal + Vapour) / DupAir.KiloPascalPerKg;
+				breather.noOxygenThreshold = DupAir.OxygenMassFor(Severe + Vapour);
+				breather.lowOxygenThreshold = DupAir.OxygenMassFor(DupAir.Normal + Vapour);
 			}
 		}
 
@@ -295,7 +378,7 @@ namespace OniDup
 				return AirZone.Protected;
 			}
 			Element headElement = Grid.Element[head];
-			headPressure = headElement.IsGas ? Grid.Mass[head] * DupAir.KiloPascalPerKg : 0f;
+			headPressure = DupAir.CellAir(head).Pressure;
 			if (sealedSuit || prefabID.HasTag(GameTags.InTransitTube) || !(headElement.IsGas || headElement.IsVacuum))
 			{
 				return AirZone.Protected;
@@ -313,7 +396,7 @@ namespace OniDup
 				{
 					continue;
 				}
-				best = Mathf.Max(best, DupAir.CellOxygenPressure(around, DupAir.CellPressure(around), mask));
+				best = Mathf.Max(best, DupAir.Lungs(DupAir.CellAir(around), mask));
 			}
 			OxygenPressure = best;
 			if (best >= DupAir.Normal) return AirZone.Normal;
