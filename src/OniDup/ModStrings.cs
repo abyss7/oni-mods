@@ -51,6 +51,25 @@ namespace OniDup
 			}
 		}
 
+		/// <summary>"Oxygen Pressure" view of the oxygen overlay and its legend.</summary>
+		public static class OVERLAY
+		{
+			public static LocString NAME = "Oxygen Pressure";
+			public static LocString TOOLTIP = "Shows how well Duplicants can breathe the air here: the pressure of <link=\"OXYGEN\">Oxygen</link> that reaches their lungs";
+			public static LocString NORMAL = "Easy Breathing";
+			public static LocString NORMAL_TOOLTIP = "<b>Easy Breathing</b>\nEnough pressure of <link=\"OXYGEN\">Oxygen</link> to breathe freely";
+			public static LocString THIN = "Thin Air";
+			public static LocString THIN_TOOLTIP = "<b>Thin Air</b>\nDuplicants get <b>Low Oxygen</b> here\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps";
+			public static LocString LIGHTHEADED = "Lightheaded";
+			public static LocString LIGHTHEADED_TOOLTIP = "<b>Lightheaded</b>\nDuplicants slow down and grow stressed here\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps if the pressure isn't too low";
+			public static LocString GASPING = "Gasping for Air";
+			public static LocString GASPING_TOOLTIP = "<b>Gasping for Air</b>\nDuplicants can barely breathe here and pass out within minutes\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps if the pressure isn't too low";
+			public static LocString UNBREATHABLE = "Unbreathable";
+			public static LocString UNBREATHABLE_TOOLTIP = "<b>Unbreathable</b>\nNot enough <link=\"OXYGEN\">Oxygen</link> to breathe at all\n\nDuplicants hold their breath and suffocate if trapped here";
+			public static LocString VACUUM = "Vacuum";
+			public static LocString VACUUM_TOOLTIP = "<b>Vacuum</b>\nThe pressure is so low that Duplicants pass out within seconds\n\nOnly a sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> protects here";
+		}
+
 		public static class DEATHS
 		{
 			public static class DECOMPRESSION

@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Code shared by our mods is compiled into each mod separately: the mods do not depend on each other. -->
-    <Compile Include="../Common/ModContext.cs;../Common/ModLocalization.cs" LinkBase="Common" />
+    <Compile Include="../Common/ModContext.cs;../Common/ModLocalization.cs;../Common/MixtureUi.cs" LinkBase="Common" />
     <!-- Translations of the mod's own strings (ModStrings.cs), if any. -->
     <ModTranslations Include="translations/*.po" />
   </ItemGroup>

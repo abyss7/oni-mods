@@ -60,6 +60,27 @@ namespace OniDup
 			}
 		}
 
+		/// <summary>Total gas pressure of a cell, kPa, on the game's mass scale; 0 for a vacuum, a liquid or a solid.</summary>
+		internal static float CellPressure(int cell)
+		{
+			return Grid.IsValidCell(cell) && Grid.Element[cell].IsGas ? Grid.Mass[cell] * KiloPascalPerKg : 0f;
+		}
+
+		/// <summary>
+		/// Pressure of Oxygen reaching the lungs from this cell's air, kPa: (P - 6.3) times the share of breathable gas (by the gas
+		/// mixture mod's composition if installed), or P - 6.3 with an oxygen mask.
+		/// </summary>
+		internal static float CellOxygenPressure(int cell, float pressure, bool mask = false)
+		{
+			float total = Grid.Mass[cell];
+			if (!(total > 0f) || pressure <= Vapour)
+			{
+				return 0f;
+			}
+			float share = mask ? 1f : Mathf.Clamp01(GasBreatherFromWorldProvider.GetBreathableCellMass(cell, out _) / total);
+			return (pressure - Vapour) * share;
+		}
+
 		private static void AddMonitor(GameObject __result)
 		{
 			__result.AddOrGet<DupAirMonitor>();
@@ -292,14 +313,7 @@ namespace OniDup
 				{
 					continue;
 				}
-				float total = Grid.Mass[around];
-				if (!(total > 0f))
-				{
-					continue;
-				}
-				float pressure = total * DupAir.KiloPascalPerKg - Vapour;
-				float share = mask ? 1f : Mathf.Clamp01(GasBreatherFromWorldProvider.GetBreathableCellMass(around, out _) / total);
-				best = Mathf.Max(best, pressure * share);
+				best = Mathf.Max(best, DupAir.CellOxygenPressure(around, DupAir.CellPressure(around), mask));
 			}
 			OxygenPressure = best;
 			if (best >= DupAir.Normal) return AirZone.Normal;

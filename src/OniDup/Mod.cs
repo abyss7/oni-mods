@@ -15,6 +15,7 @@ namespace OniDup
 			ModContext.Name = nameof(OniDup);
 			ModLocalization.Apply(harmony, typeof(ONIDUP));
 			DupAir.Apply(harmony);
+			DupAirOverlay.Apply(harmony);
 			Debug.Log($"[OniDup] {assembly.GetName().Version}, air: {DupAir.Mode}");
 		}
 	}

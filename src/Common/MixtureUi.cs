@@ -31,6 +31,8 @@ namespace OniCommon
 	///   "legend"   Func&lt;List&lt;LegendEntry&gt;&gt;          legend while a key of this group is selected;
 	///   "base"     Func&lt;SimDebugView, int, Color&gt;   optional: colour of the normal view (breathable or not), while "baseActive";
 	///   "baseActive" Func&lt;bool&gt;;
+	///   "flat"     bool                            optional: true puts the provider's choices right under the normal view, without
+	///                                              a group title (a view of the whole air rather than a group of substances);
 	///   "overlayName", "overlayButton", "overlayTooltip" Func&lt;string&gt;: overlay names (the same in meaning for all providers,
 	///              taken from the first one).
 	/// </summary>
@@ -301,7 +303,10 @@ namespace OniCommon
 				var toggles = new List<ToolParameterMenu.ToggleData>();
 				AddString(BaseKey, STRINGS.MISC.TAGS.BREATHABLE, STRINGS.UI.OVERLAYS.OXYGEN.TOOLTIPS.LEGEND2);
 				Dictionary<string, object> stillActive = null;
-				foreach (Dictionary<string, object> provider in providers)
+				// Views of the whole air first, right under the normal view; then the groups of substances.
+				var ordered = new List<Dictionary<string, object>>(providers.FindAll(provider => IsFlat(provider)));
+				ordered.AddRange(providers.FindAll(provider => !IsFlat(provider)));
+				foreach (Dictionary<string, object> provider in ordered)
 				{
 					List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
 					if (choices == null || choices.Count == 0)
@@ -310,12 +315,15 @@ namespace OniCommon
 					}
 					string id = (string)provider["id"];
 					string current = Get<Func<string>>(provider, "current")?.Invoke();
-					string heading = "ONIMIXTUREGROUP" + id.ToUpperInvariant();
-					// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals and dashes.
-					string title = Text(provider, "title") ?? id;
-					AddString(heading, "— " + title.ToUpper() + " —", title);
-					toggles.Add(new ToolParameterMenu.ToggleData(heading, ToolParameterMenu.ToggleState.Disabled));
-					choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
+					if (!IsFlat(provider))
+					{
+						string heading = "ONIMIXTUREGROUP" + id.ToUpperInvariant();
+						// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals and dashes.
+						string title = Text(provider, "title") ?? id;
+						AddString(heading, "— " + title.ToUpper() + " —", title);
+						toggles.Add(new ToolParameterMenu.ToggleData(heading, ToolParameterMenu.ToggleState.Disabled));
+						choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
+					}
 					bool found = false;
 					foreach (string[] choice in choices)
 					{
@@ -361,6 +369,11 @@ namespace OniCommon
 				__instance.legendFilters = null;
 				Debug.LogWarning($"{ModContext.Tag} mixture interface: the overlay part is switched off after an error: {e}");
 			}
+		}
+
+		private static bool IsFlat(Dictionary<string, object> provider)
+		{
+			return provider.TryGetValue("flat", out object flat) && flat is bool on && on;
 		}
 
 		private static void ChoiceChanged(OverlayModes.Mode ___currentMode)
