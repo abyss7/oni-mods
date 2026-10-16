@@ -27,15 +27,15 @@ namespace OniDup
 	/// - P below 6.3 kPa (the Armstrong limit): body fluids boil, a mask does not help: passes out in 15 s, takes 0.5 damage
 	///   per second ("Ebullism").
 	/// After passing out the game's own suffocation goes on: 120 s to death, other duplicants can resuscitate.
-	/// A drop of pressure around the duplicant by more than half and more than 30 kPa within 2 s pops the eardrums (the game's
-	/// "Popped Eardrums") and does 10 damage. Bionic duplicants are not affected yet.
+	/// A drop of pressure around the duplicant by more than half and more than 30 kPa within 2 s gives "Barotrauma" (the numbers
+	/// and reaction of the game's "Popped Eardrums", which is about over-pressure) and does 10 damage. Bionic duplicants are not affected yet.
 	/// </summary>
 	internal static class DupAir
 	{
 		internal const float KiloPascalPerKg = 101.325f / 1.8f;
 		internal const float Vapour = 6.3f;
 		internal const float Normal = 15f, Thin = 11f, Hypoxic = 8f, Severe = 6f;
-		internal const string HypoxiaId = "OniDupHypoxia", SevereHypoxiaId = "OniDupSevereHypoxia", EbullismId = "OniDupEbullism";
+		internal const string HypoxiaId = "OniDupHypoxia", SevereHypoxiaId = "OniDupSevereHypoxia", EbullismId = "OniDupEbullism", BarotraumaId = "OniDupBarotrauma";
 
 		internal static string Mode { get; private set; } = "off";
 
@@ -70,7 +70,8 @@ namespace OniDup
 			string stress = Db.Get().Amounts.Stress.deltaAttribute.Id;
 
 			string name = ONIDUP.EFFECTS.HYPOXIA.NAME;
-			var hypoxia = new Effect(HypoxiaId, name, ONIDUP.EFFECTS.HYPOXIA.TOOLTIP, 0f, true, true, true);
+			// No floating text: at a zone boundary the effect can come and go as the duplicant walks.
+			var hypoxia = new Effect(HypoxiaId, name, ONIDUP.EFFECTS.HYPOXIA.TOOLTIP, 0f, true, false, true);
 			hypoxia.Add(new AttributeModifier(stress, 15f / 600f, name));
 			hypoxia.Add(new AttributeModifier(attributes.Athletics.Id, -4f, name));
 			hypoxia.Add(new AttributeModifier(attributes.Learning.Id, -3f, name));
@@ -81,7 +82,7 @@ namespace OniDup
 			Db.Get().effects.Add(hypoxia);
 
 			name = ONIDUP.EFFECTS.SEVEREHYPOXIA.NAME;
-			var severe = new Effect(SevereHypoxiaId, name, ONIDUP.EFFECTS.SEVEREHYPOXIA.TOOLTIP, 0f, true, true, true, Db.Get().Emotes.Minion.Cough, 20f);
+			var severe = new Effect(SevereHypoxiaId, name, ONIDUP.EFFECTS.SEVEREHYPOXIA.TOOLTIP, 0f, true, false, true, Db.Get().Emotes.Minion.Cough, 20f);
 			severe.Add(new AttributeModifier(stress, 30f / 600f, name));
 			severe.Add(new AttributeModifier(attributes.Athletics.Id, -8f, name));
 			severe.Add(new AttributeModifier(attributes.Learning.Id, -4f, name));
@@ -91,7 +92,13 @@ namespace OniDup
 			}
 			Db.Get().effects.Add(severe);
 
-			Db.Get().effects.Add(new Effect(EbullismId, ONIDUP.EFFECTS.EBULLISM.NAME, ONIDUP.EFFECTS.EBULLISM.TOOLTIP, 0f, true, true, true));
+			Db.Get().effects.Add(new Effect(EbullismId, ONIDUP.EFFECTS.EBULLISM.NAME, ONIDUP.EFFECTS.EBULLISM.TOOLTIP, 0f, true, false, true));
+
+			// Barotrauma: the game's "Popped Eardrums" is about over-pressure; the same numbers and reaction, with its own text.
+			name = ONIDUP.EFFECTS.BAROTRAUMA.NAME;
+			var barotrauma = new Effect(BarotraumaId, name, ONIDUP.EFFECTS.BAROTRAUMA.TOOLTIP, 300f, true, true, true, "anim_react_popped_ears_kanim", -1f);
+			barotrauma.Add(new AttributeModifier(stress, 20f / 600f, name));
+			Db.Get().effects.Add(barotrauma);
 		}
 
 		// The game's checks of a duplicant's air go through these: our zones decide for duplicants the mod watches.
@@ -140,6 +147,8 @@ namespace OniDup
 	{
 		private const int HistorySamples = 10; // 2 s at 0.2 s
 		private const float DecompressionDrop = 30f, DecompressionCooldown = 10f, DecompressionDamage = 10f, EbullismDamagePerSecond = 0.5f;
+		// Ebullism damage comes in portions: every hit plays the game's flinch, every 0.2 s it would never stop.
+		private const float EbullismDamageEvery = 5f;
 		private const float VacuumBreathSeconds = 15f, SevereBreathSeconds = 180f;
 		private const int AirChangedEvent = -933153513; // GameHashes.OxygenBreatherHasAirChanged
 
@@ -157,7 +166,9 @@ namespace OniDup
 		private readonly float[] history = new float[HistorySamples];
 		private int historyCount, historyAt;
 		private float lastDecompression = -1000f;
+		private float ebullismTime = EbullismDamageEvery;
 		private AttributeModifier drain;
+		private AirZone zoneOfDrain;
 
 		internal AirZone Zone { get; private set; } = AirZone.Protected;
 		internal bool Watching => Zone != AirZone.Protected;
@@ -214,7 +225,16 @@ namespace OniDup
 			UpdateDrain();
 			if (Zone == AirZone.Vacuum && health != null)
 			{
-				health.Damage(EbullismDamagePerSecond * dt);
+				ebullismTime += dt;
+				if (ebullismTime >= EbullismDamageEvery)
+				{
+					health.Damage(EbullismDamagePerSecond * ebullismTime);
+					ebullismTime = 0f;
+				}
+			}
+			else
+			{
+				ebullismTime = EbullismDamageEvery;
 			}
 			Decompression(pressure, sealedSuit);
 		}
@@ -298,7 +318,7 @@ namespace OniDup
 				float rate = DUPLICANTSTATS.STANDARD.Breath.BREATH_RATE;
 				target = rate - DUPLICANTSTATS.STANDARD.Breath.BREATH_BAR_TOTAL_AMOUNT / seconds;
 			}
-			if (drain != null && Mathf.Abs(drain.Value - target) < 0.01f)
+			if (drain != null && Mathf.Abs(drain.Value - target) < 0.01f && zoneOfDrain == Zone)
 			{
 				return;
 			}
@@ -310,8 +330,10 @@ namespace OniDup
 			}
 			if (target != 0f)
 			{
-				drain = new AttributeModifier(Db.Get().Amounts.Breath.deltaAttribute.Id, target, ONIDUP.EFFECTS.LOWPRESSURE.NAME);
+				string name = Zone == AirZone.Severe ? (string)ONIDUP.EFFECTS.SEVEREHYPOXIA.NAME : Zone == AirZone.Vacuum ? (string)ONIDUP.EFFECTS.EBULLISM.NAME : (string)ONIDUP.EFFECTS.LOWPRESSURE.NAME;
+				drain = new AttributeModifier(Db.Get().Amounts.Breath.deltaAttribute.Id, target, name);
 				attributes.Add(drain);
+				zoneOfDrain = Zone;
 			}
 		}
 
@@ -332,7 +354,7 @@ namespace OniDup
 			}
 			lastDecompression = GameClock.Instance.GetTime();
 			historyCount = 0;
-			effects?.Add("PoppedEarDrums", true);
+			effects?.Add(DupAir.BarotraumaId, true);
 			health?.Damage(DecompressionDamage);
 		}
 	}

@@ -23,7 +23,14 @@ namespace OniDup
 
 			public static class LOWPRESSURE
 			{
-				public static LocString NAME = "Low pressure";
+				/// <summary>Name of the change of the breath bar: lungs hold less air at a low pressure.</summary>
+				public static LocString NAME = "Thin air in the lungs";
+			}
+
+			public static class BAROTRAUMA
+			{
+				public static LocString NAME = "Barotrauma";
+				public static LocString TOOLTIP = "A sudden drop of pressure hurt this Duplicant's ears and lungs";
 			}
 
 			public static class EBULLISM
