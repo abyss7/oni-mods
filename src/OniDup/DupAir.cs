@@ -14,8 +14,9 @@ namespace OniDup
 	/// - P, the total gas pressure at the head, on the game's mass scale (1 atm = 101.3 kPa = 1.8 kg of gas in a cell);
 	/// - pO2, the pressure of oxygen that reaches the lungs: (P - 6.3) times the share of breathable gas (Oxygen and Polluted
 	///   Oxygen, by the gas mixture mod's composition if it is installed) in the best cell around the head; 6.3 kPa is the
-	///   water vapour in the lungs. An oxygen mask gives pure oxygen at the pressure around: pO2 = P - 6.3. A sealed suit and
-	///   a transit tube protect from everything here.
+	///   water vapour in the lungs. An oxygen mask gives pure oxygen at the pressure around: pO2 = P - 6.3. A sealed suit (Atmo,
+	///   Jet, Lead), a transit tube and a building that supplies air while working in it (a telescope) protect from
+	///   everything here.
 	///
 	/// Zones by pO2 (sea level is about 20 kPa):
 	/// - 15 and more: normal;
@@ -371,7 +372,7 @@ namespace OniDup
 
 	internal enum AirZone
 	{
-		Protected, // a suit, a transit tube, the head in a liquid or a solid: the game's own logic
+		Protected, // a suit, a transit tube, a building's air supply, the head in a liquid or a solid: the game's own logic
 		Normal,
 		Thin,
 		Hypoxia,
@@ -499,8 +500,16 @@ namespace OniDup
 		{
 			headPressure = 0f;
 			sealedSuit = prefabID.HasTag(GameTags.HasSuitTank) && suitEquipper != null && suitEquipper.IsWearingAirtightSuit() != null;
+			OxygenBreather.IGasProvider provider = breather.GetCurrentGasProvider();
+			// A building that supplies air while the duplicant works in it (a telescope): they breathe its air, not the room's.
+			if (provider != null && !(provider is GasBreatherFromWorldProvider) && !(provider is SuitTank))
+			{
+				OxygenPressure = 0f;
+				CarbonDioxide = 0f;
+				return AirZone.Protected;
+			}
 			// An oxygen mask counts only while its tank has oxygen; an empty mask is left to the game (no air).
-			bool mask = !sealedSuit && breather.GetCurrentGasProvider() is SuitTank tank && !tank.IsEmpty();
+			bool mask = !sealedSuit && provider is SuitTank tank && !tank.IsEmpty();
 			int cell = Grid.PosToCell(this);
 			int head = Grid.IsValidCell(cell) ? Grid.CellAbove(cell) : -1;
 			if (!Grid.IsValidCell(head))

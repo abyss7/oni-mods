@@ -20,22 +20,38 @@ namespace OniDup
 	/// from Carbon Dioxide); thin air at the four steps of the Oxygen scale; a vacuum (exposure, passing out, damage, death from
 	/// it); Oxygen at 3.3 atm (toxicity after half a cycle, seizures); a sharp drop of pressure (decompression injury);
 	/// buried to the waist and over the head (stays in place, breathing with the option off and on, freed when dug out); a dig
-	/// two cells away with a wall that goes up on the way or as the work starts (no work through the wall).
+	/// two cells away with a wall that goes up on the way or as the work starts (no work through the wall); an oxygen mask in
+	/// air poor in oxygen, in Carbon Dioxide and in a vacuum (helps in the first two only); Atmo, Jet and Lead suits taken
+	/// into a vacuum (nothing happens); the head under water (left to the game); a building's air supply (like a telescope's)
+	/// in a vacuum (nothing happens); a bionic Duplicant in Carbon Dioxide (not affected yet). Scenes whose equipment or
+	/// Duplicant model the game lacks (a DLC is off) are skipped.
 	/// </summary>
 	internal static class DupCases
 	{
-		private const int Rooms = 16, RoomsPerRow = 6, RoomWidth = 5, RoomHeight = 3;
+		private const int Rooms = 25, RoomsPerRow = 6, RoomWidth = 5, RoomHeight = 3;
 		private const int SiteWidth = 1 + RoomsPerRow * (RoomWidth + 1), SiteHeight = 1 + (Rooms + RoomsPerRow - 1) / RoomsPerRow * (RoomHeight + 1);
 		private const float Warm = 300f, AirMass = 1.8f, StartAfter = 8f;
 		private const int Normal = 0, Stuffy = 1, Headache = 2, Poisoning = 3, PassingOut = 4, Thin = 5, Lightheaded = 6, Gasping = 7, NoOxygen = 8,
-			Vacuum = 9, Toxic = 10, Drop = 11, Waist = 12, Head = 13, DigOnTheWay = 14, DigAtWork = 15;
+			Vacuum = 9, Toxic = 10, Drop = 11, Waist = 12, Head = 13, DigOnTheWay = 14, DigAtWork = 15,
+			MaskPoorAir = 16, MaskCarbon = 17, MaskVacuum = 18, AtmoSuit = 19, JetSuit = 20, LeadSuit = 21, UnderWater = 22, AirSupply = 23, Bionic = 24;
 		private static readonly string[] Names =
 		{
 			"normal air", "stuffy air (CO2 2 kPa)", "a CO2 headache (4 kPa)", "CO2 poisoning (6.5 kPa)", "passing out and death from CO2 (14 kPa)",
 			"thin air (pO2 13 kPa)", "lightheaded (pO2 9.5 kPa)", "gasping for air (pO2 7 kPa)", "no oxygen (pO2 3 kPa)", "vacuum exposure and death",
 			"oxygen toxicity (3.3 atm)", "decompression injury", "buried to the waist", "buried over the head", "a wall on the way to a dig",
 			"a wall as the dig starts",
+			"an oxygen mask in air poor in oxygen", "an oxygen mask in carbon dioxide", "an oxygen mask in a vacuum", "an atmo suit into a vacuum",
+			"a jet suit into a vacuum", "a lead suit into a vacuum", "the head under water", "a building's air supply in a vacuum",
+			"a bionic duplicant in carbon dioxide",
 		};
+		// Equipment of the scenes, by room.
+		private static readonly Dictionary<int, string> Outfits = new Dictionary<int, string>
+		{
+			{ MaskPoorAir, OxygenMaskConfig.ID }, { MaskCarbon, OxygenMaskConfig.ID }, { MaskVacuum, OxygenMaskConfig.ID },
+			{ AtmoSuit, AtmoSuitConfig.ID }, { JetSuit, JetSuitConfig.ID }, { LeadSuit, LeadSuitConfig.ID },
+		};
+		// Air poor in oxygen: Hydrogen with a little Oxygen (kPa); without a mask the lungs get about 10 kPa of Oxygen.
+		private const float PoorHydrogen = 90f, PoorOxygen = 11f;
 		// Carbon Dioxide in rooms 1-4, kPa; Oxygen in the lungs in rooms 5-8, kPa.
 		// Passing out at 14 kPa, well above the 8 kPa limit: Carbon Dioxide sinks, and the Duplicant breathes the best cell around.
 		private static readonly float[] CarbonDioxide = { 0f, 2f, 4f, 6.5f, 14f };
@@ -47,7 +63,7 @@ namespace OniDup
 		private static readonly GameObject[] dupes = new GameObject[Rooms];
 		private static readonly bool[] done = new bool[Rooms];
 		private static readonly Dictionary<string, float> notes = new Dictionary<string, float>();
-		private static int passed, failed, seizures;
+		private static int passed, failed, skipped, seizures;
 		private static bool seizing, originalOption;
 		// Dig scenes: the cell to dig, when the wall went up and the last cell the work was done from after it.
 		private static readonly int[] wallAt = new int[Rooms];
@@ -230,9 +246,17 @@ namespace OniDup
 				int r = room;
 				ForRoom(room, (cell, dx, dy) =>
 				{
-					if (r == Vacuum)
+					if (r == Vacuum || r == MaskVacuum || r == AirSupply)
 					{
 						Set(cell, SimHashes.Vacuum, 0f);
+					}
+					else if (r == MaskPoorAir)
+					{
+						Set(cell, SimHashes.Hydrogen, MassFor(SimHashes.Hydrogen, PoorHydrogen));
+					}
+					else if (r == UnderWater && dy < 2)
+					{
+						Set(cell, SimHashes.Water, 1000f);
 					}
 					else
 					{
@@ -251,27 +275,39 @@ namespace OniDup
 		/// <summary>Carbon Dioxide is added the way buildings add gas: with the gas mixture mod it joins the Oxygen of the cell.</summary>
 		private static void AddCarbonDioxide()
 		{
-			for (int room = Stuffy; room <= PassingOut; room++)
+			foreach (int room in new[] { Stuffy, Headache, Poisoning, PassingOut, MaskCarbon, Bionic })
 			{
-				float mass = MassFor(SimHashes.CarbonDioxide, CarbonDioxide[room]);
-				ForRoom(room, (cell, dx, dy) => SimMessages.AddRemoveSubstance(cell, SimHashes.CarbonDioxide, CellEventLogger.Instance.ElementConsumerSimUpdate,
-					mass, Warm, byte.MaxValue, 0));
+				float mass = MassFor(SimHashes.CarbonDioxide, CarbonDioxide[room <= PassingOut ? room : PassingOut]);
+				ForRoom(room, (cell, dx, dy) => Add(cell, SimHashes.CarbonDioxide, mass));
 			}
+			float poorOxygen = MassFor(SimHashes.Oxygen, PoorOxygen);
+			ForRoom(MaskPoorAir, (cell, dx, dy) => Add(cell, SimHashes.Oxygen, poorOxygen));
+		}
+
+		private static void Add(int cell, SimHashes element, float mass)
+		{
+			SimMessages.AddRemoveSubstance(cell, element, CellEventLogger.Instance.ElementConsumerSimUpdate, mass, Warm, byte.MaxValue, 0);
 		}
 
 		private static readonly string[] Spoilers = { "CantDig", "Narcolepsy", "MouthBreather", "DeeperDiversLungs" };
 
 		private static void SpawnDupes()
 		{
-			GameObject prefab = Assets.GetPrefab(MinionConfig.ID);
 			for (int room = 0; room < Rooms; room++)
 			{
+				Tag model = room == Bionic ? GameTags.Minions.Models.Bionic : GameTags.Minions.Models.Standard;
+				GameObject prefab = Assets.TryGetPrefab(room == Bionic ? (Tag)BionicMinionConfig.ID : (Tag)MinionConfig.ID);
+				if (prefab == null || (Outfits.TryGetValue(room, out string outfit) && Assets.TryGetPrefab(outfit) == null))
+				{
+					Skip(room, "not in this game (a DLC is off)");
+					continue;
+				}
 				int cell = RoomCell(room, room == DigOnTheWay || room == DigAtWork ? 4 : 3, 0);
 				// Traits that would spoil a scene: no digging, falling asleep at random, breathing much more or less, bigger lungs.
 				MinionStartingStats stats;
 				do
 				{
-					stats = new MinionStartingStats(GameTags.Minions.Models.Standard, is_starter_minion: false);
+					stats = new MinionStartingStats(model, is_starter_minion: false);
 				}
 				while (stats.Traits.Any(trait => Spoilers.Contains(trait.Id) || trait.Id.StartsWith("GrantSkill_Swimming")));
 				GameObject dupe = Util.KInstantiate(prefab);
@@ -315,9 +351,9 @@ namespace OniDup
 					Fail(room, $"exception: {e}");
 				}
 			}
-			if (passed + failed == Rooms)
+			if (passed + failed + skipped == Rooms)
 			{
-				Debug.Log($"{ModContext.Tag} DupCases: {passed} of {Rooms} scenes passed; work fixes: moved while working {DupWork.escapes}, " +
+				Debug.Log($"{ModContext.Tag} DupCases: {passed} of {Rooms - skipped} scenes passed{(skipped > 0 ? $", {skipped} skipped" : "")}; work fixes: moved while working {DupWork.escapes}, " +
 					$"swings finished early {DupWork.swings}, started work resumed {DupWork.resumes}, turned on the way {DupWork.rerouted}, " +
 					$"stopped working through a wall {DupWork.walls}");
 				phase = 6;
@@ -333,6 +369,25 @@ namespace OniDup
 				return;
 			}
 			DupAirMonitor air = dupe.GetComponent<DupAirMonitor>();
+			if (t >= 1f && !notes.ContainsKey("dressed" + room))
+			{
+				notes["dressed" + room] = 1f;
+				if (Outfits.ContainsKey(room))
+				{
+					items[room] = MakeOutfit(room, dupe);
+				}
+				else if (room == AirSupply)
+				{
+					dupe.GetComponent<OxygenBreather>().AddGasProvider(new TestAirSupply());
+				}
+			}
+			// The outfit is put on a second after it is made: an item spawns on the next frame, and one already equipped by then
+			// would equip itself again on spawning.
+			if (t >= 2f && items.TryGetValue(room, out GameObject outfit))
+			{
+				items.Remove(room);
+				Equip(outfit, dupe);
+			}
 			switch (room)
 			{
 				case Normal:
@@ -401,7 +456,132 @@ namespace OniDup
 				case DigAtWork:
 					DigScene(room, t, dupe);
 					break;
+				case MaskPoorAir:
+					if (t >= 4f)
+					{
+						// Without the mask the same air would leave the lungs short of Oxygen.
+						float bare = DupAir.Lungs(DupAir.CellAir(Grid.CellAbove(Grid.PosToCell(dupe))));
+						Expect(room, Masked(dupe) && air.Zone == AirZone.Normal && !air.Blocked && OnlyEffect(dupe, null) && bare < DupAir.Thin, dupe,
+							$"without the mask pO2 would be {bare:F1} kPa");
+					}
+					break;
+				case MaskCarbon:
+					if (t >= 4f)
+					{
+						Expect(room, Masked(dupe) && air.Zone == AirZone.Normal && air.CarbonDioxideLevel == 0 && !air.Blocked && OnlyEffect(dupe, null), dupe);
+					}
+					break;
+				case MaskVacuum:
+					if (t >= 4f)
+					{
+						Expect(room, Masked(dupe) && air.Zone == AirZone.Vacuum && dupe.GetComponent<Effects>().HasEffect(DupAir.EbullismId), dupe);
+					}
+					break;
+				case AtmoSuit:
+				case JetSuit:
+				case LeadSuit:
+					SuitScene(room, t, dupe, air);
+					break;
+				case UnderWater:
+					if (t >= 4f)
+					{
+						Expect(room, air.Zone == AirZone.Protected && OnlyEffect(dupe, null), dupe, $"head in {Grid.Element[Grid.CellAbove(Grid.PosToCell(dupe))].id}");
+					}
+					break;
+				case AirSupply:
+					if (t >= 4f && !notes.ContainsKey("supply"))
+					{
+						notes["supply"] = dupe.GetComponent<Health>().hitPoints;
+						if (!(air.Zone == AirZone.Protected && OnlyEffect(dupe, null)))
+						{
+							Fail(room, "exposed: " + Describe(dupe));
+						}
+					}
+					else if (t >= 25f)
+					{
+						Health health = dupe.GetComponent<Health>();
+						Expect(room, !dupe.HasTag(GameTags.SuffocatingIncapacitated) && health.hitPoints >= notes["supply"] - 0.5f && OnlyEffect(dupe, null) &&
+							!dupe.GetComponent<KSelectable>().HasStatusItem(DupAir.VacuumStatus), dupe, $"health {health.hitPoints:F1}");
+					}
+					break;
+				case Bionic:
+					if (t >= 10f)
+					{
+						Expect(room, air == null && OnlyEffect(dupe, null), dupe, "not watched by the mod");
+					}
+					break;
 			}
+		}
+
+		/// <summary>A sealed suit: in normal air, then the room becomes a vacuum; nothing must happen to the Duplicant.</summary>
+		private static void SuitScene(int room, float t, GameObject dupe, DupAirMonitor air)
+		{
+			string key = "suit" + room;
+			Health health = dupe.GetComponent<Health>();
+			if (t >= 4f && !notes.ContainsKey(key))
+			{
+				notes[key] = health.hitPoints;
+				if (dupe.GetComponent<SuitEquipper>().IsWearingAirtightSuit() == null)
+				{
+					Fail(room, "the suit is not on");
+					return;
+				}
+				ForRoom(room, (cell, dx, dy) => Set(cell, SimHashes.Vacuum, 0f));
+			}
+			else if (t >= 8f && !notes.ContainsKey(key + "-vacuum"))
+			{
+				notes[key + "-vacuum"] = 1f;
+				if (!(air.Zone == AirZone.Protected && OnlyEffect(dupe, null)))
+				{
+					Fail(room, "exposed in the suit: " + Describe(dupe));
+				}
+			}
+			else if (t >= 25f)
+			{
+				Expect(room, !dupe.HasTag(GameTags.SuffocatingIncapacitated) && health.hitPoints >= notes[key] - 0.5f && OnlyEffect(dupe, null), dupe,
+					$"health {health.hitPoints:F1}");
+			}
+		}
+
+		private static readonly Dictionary<int, GameObject> items = new Dictionary<int, GameObject>();
+
+		private static GameObject MakeOutfit(int room, GameObject dupe)
+		{
+			GameObject item = Util.KInstantiate(Assets.GetPrefab(Outfits[room]));
+			item.transform.SetPosition(dupe.transform.GetPosition());
+			item.SetActive(true);
+			return item;
+		}
+
+		private static void Equip(GameObject item, GameObject dupe)
+		{
+			SuitTank tank = item.GetComponent<SuitTank>();
+			tank.storage.AddGasChunk(SimHashes.Oxygen, tank.capacity, Warm, byte.MaxValue, 0, keep_zero_mass: false);
+			Equippable equippable = item.GetComponent<Equippable>();
+			Equipment equipment = dupe.GetComponent<MinionIdentity>().GetEquipment();
+			// As a suit locker does it: the errand to go and put it on, created by the assignment, is cancelled.
+			equippable.Assign(equipment.GetComponent<IAssignableIdentity>());
+			item.GetComponent<EquippableWorkable>().CancelChore("Manual equip");
+			equipment.Equip(equippable);
+		}
+
+		private static bool Masked(GameObject dupe)
+		{
+			return dupe.GetComponent<OxygenBreather>().GetCurrentGasProvider() is SuitTank tank && !tank.IsEmpty() &&
+				!tank.GetComponent<KPrefabID>().HasTag(GameTags.AirtightSuit);
+		}
+
+		/// <summary>Air from a building, like a telescope gives the Duplicant working in it.</summary>
+		private sealed class TestAirSupply : OxygenBreather.IGasProvider
+		{
+			public void OnSetOxygenBreather(OxygenBreather oxygen_breather) { }
+			public void OnClearOxygenBreather(OxygenBreather oxygen_breather) { }
+			public bool ConsumeGas(OxygenBreather oxygen_breather, float amount) => true;
+			public bool ShouldEmitCO2() => false;
+			public bool ShouldStoreCO2() => false;
+			public bool IsLowOxygen() => false;
+			public bool HasOxygen() => true;
+			public bool IsBlocked() => false;
 		}
 
 		private static void VacuumScene(int room, float t, GameObject dupe, DupAirMonitor air)
@@ -587,6 +767,10 @@ namespace OniDup
 		private static string Describe(GameObject dupe)
 		{
 			DupAirMonitor air = dupe.GetComponent<DupAirMonitor>();
+			if (air == null)
+			{
+				return $"not watched by the mod, effects [{string.Join(",", OwnEffects.Where(dupe.GetComponent<Effects>().HasEffect))}]";
+			}
 			Effects effects = dupe.GetComponent<Effects>();
 			string own = string.Join(",", OwnEffects.Where(effects.HasEffect));
 			AmountInstance breath = Db.Get().Amounts.Breath.Lookup(dupe);
@@ -607,6 +791,13 @@ namespace OniDup
 			{
 				Fail(room, (extra != null ? extra + "; " : "") + Describe(dupe));
 			}
+		}
+
+		private static void Skip(int room, string why)
+		{
+			done[room] = true;
+			skipped++;
+			Debug.Log($"{ModContext.Tag} DupCases: {Names[room]}: skipped: {why}");
 		}
 
 		private static void Fail(int room, string why)
