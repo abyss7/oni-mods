@@ -38,6 +38,8 @@ namespace OniDup
 		internal const string HypoxiaId = "OniDupHypoxia", SevereHypoxiaId = "OniDupSevereHypoxia", EbullismId = "OniDupEbullism", BarotraumaId = "OniDupBarotrauma";
 
 		internal static string Mode { get; private set; } = "off";
+		internal static StatusItem VacuumStatus { get; private set; }
+		internal static Death Decompression { get; private set; }
 
 		internal static void Apply(Harmony harmony)
 		{
@@ -48,6 +50,7 @@ namespace OniDup
 				harmony.Patch(AccessTools.Method(typeof(OxygenBreather), nameof(OxygenBreather.IsLowOxygen)), postfix: new HarmonyMethod(typeof(DupAir), nameof(LowOxygen)));
 				harmony.Patch(AccessTools.PropertyGetter(typeof(OxygenBreather), nameof(OxygenBreather.HasOxygen)), postfix: new HarmonyMethod(typeof(DupAir), nameof(HasOxygen)));
 				harmony.Patch(AccessTools.PropertyGetter(typeof(OxygenBreather), nameof(OxygenBreather.IsOutOfOxygen)), postfix: new HarmonyMethod(typeof(DupAir), nameof(OutOfOxygen)));
+				harmony.Patch(AccessTools.Method(typeof(SuffocationMonitor.Instance), nameof(SuffocationMonitor.Instance.Kill)), prefix: new HarmonyMethod(typeof(DupAir), nameof(DeathInVacuum)));
 				Mode = "on";
 			}
 			catch (Exception e)
@@ -99,6 +102,23 @@ namespace OniDup
 			var barotrauma = new Effect(BarotraumaId, name, ONIDUP.EFFECTS.BAROTRAUMA.TOOLTIP, 300f, true, true, true, "anim_react_popped_ears_kanim", -1f);
 			barotrauma.Add(new AttributeModifier(stress, 20f / 600f, name));
 			Db.Get().effects.Add(barotrauma);
+
+			VacuumStatus = new StatusItem("OniDupVacuum", ONIDUP.STATUSITEMS.VACUUM.NAME, ONIDUP.STATUSITEMS.VACUUM.TOOLTIP, "",
+				StatusItem.IconType.Exclamation, NotificationType.DuplicantThreatening, false, OverlayModes.None.ID);
+			Decompression = new Death("OniDupDecompression", Db.Get().Deaths, ONIDUP.DEATHS.DECOMPRESSION.NAME, ONIDUP.DEATHS.DECOMPRESSION.DESCRIPTION,
+				"death_suffocation", "dead_on_back");
+		}
+
+		/// <summary>A duplicant who passed out in a vacuum and was not rescued dies of the vacuum, not of plain suffocation.</summary>
+		private static bool DeathInVacuum(SuffocationMonitor.Instance __instance)
+		{
+			DupAirMonitor monitor = DupAirMonitor.Of(__instance.oxygenBreather);
+			if (monitor == null || monitor.Zone != AirZone.Vacuum || Decompression == null)
+			{
+				return true;
+			}
+			__instance.gameObject.GetSMI<DeathMonitor.Instance>().Kill(Decompression);
+			return false;
 		}
 
 		// The game's checks of a duplicant's air go through these: our zones decide for duplicants the mod watches.
@@ -161,6 +181,7 @@ namespace OniDup
 		[MyCmpGet] private Health health;
 		[MyCmpGet] private KPrefabID prefabID;
 		[MyCmpGet] private SuitEquipper suitEquipper;
+		[MyCmpGet] private KSelectable selectable;
 #pragma warning restore CS0649
 
 		private readonly float[] history = new float[HistorySamples];
@@ -218,6 +239,7 @@ namespace OniDup
 			SetEffect(DupAir.HypoxiaId, Zone == AirZone.Hypoxia);
 			SetEffect(DupAir.SevereHypoxiaId, Zone == AirZone.Severe);
 			SetEffect(DupAir.EbullismId, Zone == AirZone.Vacuum);
+			SetVacuumStatus(Zone == AirZone.Vacuum);
 			if (Blocked != wasBlocked)
 			{
 				Trigger(AirChangedEvent, Blocked ? BoxedBools.False : BoxedBools.True);
@@ -287,6 +309,25 @@ namespace OniDup
 			return AirZone.NoOxygen;
 		}
 
+		private System.Guid vacuumStatus;
+
+		private void SetVacuumStatus(bool on)
+		{
+			if (selectable == null || DupAir.VacuumStatus == null)
+			{
+				return;
+			}
+			if (on && vacuumStatus == System.Guid.Empty)
+			{
+				vacuumStatus = selectable.AddStatusItem(DupAir.VacuumStatus, this);
+			}
+			else if (!on && vacuumStatus != System.Guid.Empty)
+			{
+				selectable.RemoveStatusItem(vacuumStatus);
+				vacuumStatus = System.Guid.Empty;
+			}
+		}
+
 		private void SetEffect(string id, bool on)
 		{
 			if (effects == null)
@@ -330,7 +371,7 @@ namespace OniDup
 			}
 			if (target != 0f)
 			{
-				string name = Zone == AirZone.Severe ? (string)ONIDUP.EFFECTS.SEVEREHYPOXIA.NAME : Zone == AirZone.Vacuum ? (string)ONIDUP.EFFECTS.EBULLISM.NAME : (string)ONIDUP.EFFECTS.LOWPRESSURE.NAME;
+				string name = Zone == AirZone.Severe ? (string)ONIDUP.BREATH.GASPING : Zone == AirZone.Vacuum ? (string)ONIDUP.BREATH.VACUUM : (string)ONIDUP.BREATH.THINAIR;
 				drain = new AttributeModifier(Db.Get().Amounts.Breath.deltaAttribute.Id, target, name);
 				attributes.Add(drain);
 				zoneOfDrain = Zone;

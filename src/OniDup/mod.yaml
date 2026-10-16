@@ -1,3 +1,3 @@
 title: "OniDup"
-description: "A harsher life for duplicants. Thin air and vacuum: breathing depends on the pressure of oxygen, a duplicant in thin air suffers hypoxia, in vacuum passes out within seconds and body fluids boil, a sudden drop of pressure pops the eardrums. An oxygen mask helps in thin air but not in vacuum; only a suit protects there. Works with the gas mixture and pressure mods (oxygen share of a mixture) and without them."
+description: "A harsher life for Duplicants. Breathing now depends on the pressure of Oxygen: thin air makes Duplicants lightheaded and then gasping for air, and in a vacuum they pass out within seconds as the moisture in their bodies boils away. A sudden drop in pressure injures ears and lungs. An Oxygen Mask helps in thin air but not in a vacuum; only a sealed suit like the Atmo Suit protects there. Works on its own and with the gas mixture and pressure mods."
 staticID: "abyss.OniDup"

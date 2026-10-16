@@ -11,32 +11,52 @@ namespace OniDup
 		{
 			public static class HYPOXIA
 			{
-				public static LocString NAME = "Hypoxia";
-				public static LocString TOOLTIP = "There is too little oxygen in what this Duplicant breathes: they tire quickly and think slowly";
+				public static LocString NAME = "Lightheaded";
+				public static LocString TOOLTIP = "This Duplicant isn't getting enough <link=\"OXYGEN\">Oxygen</link> from the air here\n\nThe air needs more pressure or a richer share of <link=\"OXYGEN\">Oxygen</link>";
 			}
 
 			public static class SEVEREHYPOXIA
 			{
-				public static LocString NAME = "Severe Hypoxia";
-				public static LocString TOOLTIP = "This Duplicant can barely get any oxygen and will pass out soon";
-			}
-
-			public static class LOWPRESSURE
-			{
-				/// <summary>Name of the change of the breath bar: lungs hold less air at a low pressure.</summary>
-				public static LocString NAME = "Thin air in the lungs";
-			}
-
-			public static class BAROTRAUMA
-			{
-				public static LocString NAME = "Barotrauma";
-				public static LocString TOOLTIP = "A sudden drop of pressure hurt this Duplicant's ears and lungs";
+				public static LocString NAME = "Gasping for Air";
+				public static LocString TOOLTIP = "This Duplicant can barely draw any <link=\"OXYGEN\">Oxygen</link> from this thin air and will soon pass out";
 			}
 
 			public static class EBULLISM
 			{
-				public static LocString NAME = "Ebullism";
-				public static LocString TOOLTIP = "The pressure here is so low that the water in this Duplicant's body is boiling. Only a sealed suit protects from it";
+				public static LocString NAME = "Vacuum Exposure";
+				public static LocString TOOLTIP = "The pressure here is so low that the moisture in this Duplicant's body is boiling away\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> won't help here, only a sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> will";
+			}
+
+			public static class BAROTRAUMA
+			{
+				public static LocString NAME = "Decompression Injury";
+				public static LocString TOOLTIP = "A sudden drop in pressure hurt this Duplicant's ears and lungs\n\nA sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> prevents this";
+			}
+		}
+
+		/// <summary>Names of the changes to the breath bar, shown in its tooltip.</summary>
+		public static class BREATH
+		{
+			public static LocString THINAIR = "Thin air in the lungs";
+			public static LocString GASPING = "Gasping for Air";
+			public static LocString VACUUM = "Vacuum Exposure";
+		}
+
+		public static class STATUSITEMS
+		{
+			public static class VACUUM
+			{
+				public static LocString NAME = "Exposed to Vacuum";
+				public static LocString TOOLTIP = "This Duplicant is in a near-vacuum and will pass out within seconds\n\nOnly a sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> protects against vacuum";
+			}
+		}
+
+		public static class DEATHS
+		{
+			public static class DECOMPRESSION
+			{
+				public static LocString NAME = "Vacuum Exposure";
+				public static LocString DESCRIPTION = "{Target} was exposed to the vacuum for too long.";
 			}
 		}
 	}
