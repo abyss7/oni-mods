@@ -1,0 +1,21 @@
+<Project>
+  <!-- After the build, deploy the mod to mods/Dev/<name>, where the game picks up dev mods. -->
+  <Target Name="DeployMod" AfterTargets="Build" Condition="'$(IsOniMod)' == 'true' And '$(NoDeploy)' != 'true'">
+    <PropertyGroup>
+      <ModDeployDir>$(DevModsDir)/$(AssemblyName)</ModDeployDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <ModFiles Include="$(TargetPath)" />
+      <!-- Libraries the mod carries with it: listed in the project as ModLibrary. -->
+      <ModFiles Include="@(ModLibrary->'$(TargetDir)%(Identity)')" />
+      <ModFiles Include="$(TargetDir)$(TargetName).pdb" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+      <ModFiles Include="$(MSBuildProjectDirectory)/mod.yaml;$(MSBuildProjectDirectory)/mod_info.yaml" />
+      <ModFiles Include="@(ModExtraFiles->'%(FullPath)')" />
+    </ItemGroup>
+    <MakeDir Directories="$(ModDeployDir)" />
+    <Copy SourceFiles="@(ModFiles)" DestinationFolder="$(ModDeployDir)" SkipUnchangedFiles="true" />
+    <!-- Translations of the mod strings: files <language code>.po, placed in the translations folder of the mod. -->
+    <Copy SourceFiles="@(ModTranslations)" DestinationFolder="$(ModDeployDir)/translations" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Mod deployed: $(ModDeployDir)" />
+  </Target>
+</Project>

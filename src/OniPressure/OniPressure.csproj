@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>OniPressure</AssemblyName>
+    <RootNamespace>OniPressure</RootNamespace>
+    <Version>0.1.0</Version>
+    <IsOniMod>true</IsOniMod>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Code shared by our mods is compiled into each mod separately: the mods do not depend on each other. -->
+    <Compile Include="../Common/ModContext.cs;../Common/ModLocalization.cs;../Common/SimHooks.cs;../Common/ElementRecords.cs" LinkBase="Common" />
+    <!-- PLib provides the standard mod options dialog. It goes into the mod folder as a separate file next to OniPressure.dll. -->
+    <PackageReference Include="PLib" Version="4.25.0" />
+    <ModLibrary Include="PLib.dll" />
+    <!-- Hooks on simulation functions (sim/build.sh): the shared hook engine and the pressure plugin. Without them the mod changes nothing. -->
+    <ModExtraFiles Include="../../sim/build/oni_simhook.bin" Condition="Exists('../../sim/build/oni_simhook.bin')" />
+    <ModExtraFiles Include="../../sim/build/oni_pressure.bin" Condition="Exists('../../sim/build/oni_pressure.bin')" />
+    <!-- Translations of the mod's own strings (ModStrings.cs), if any. -->
+    <ModTranslations Include="translations/*.po" />
+  </ItemGroup>
+</Project>

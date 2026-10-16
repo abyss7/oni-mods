@@ -1,0 +1,3 @@
+title: "OniProfiler"
+description: "Frame-time profiler. Breaks every frame down by engine stage, update bucket and key game methods, and shows how much of it the native simulation takes. A report is written to profile.log in the mod folder every 30 seconds of play."
+staticID: "abyss.OniProfiler"

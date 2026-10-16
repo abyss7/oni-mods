@@ -1,0 +1,3 @@
+title: "OniLiquidMix"
+description: "Liquid mixtures: liquids that mix in real life (water, polluted water, salt water, brine, polluted brine, ethanol, nectar, brackene, ovolene; crude oil, petroleum, naphtha, phyto oil, biodiesel) share a cell as a mixture, like gases do. The mod moves liquids itself; liquids that do not mix settle by density, and water is densest at 4 °C, so ponds freeze from the top. A mixture freezes and boils by its components, pumps take its liquids in proportion, the liquid element sensor sees a liquid inside a mixture. The composition is shown in the tooltip and on the mixtures overlay. Settings: mixtures, layers by density. Windows only (hooks the game's native simulation)."
+staticID: "abyss.OniLiquidMix"

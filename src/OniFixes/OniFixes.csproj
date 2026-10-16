@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>OniFixes</AssemblyName>
+    <RootNamespace>OniFixes</RootNamespace>
+    <Version>0.1.0</Version>
+    <IsOniMod>true</IsOniMod>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Shared code of our mods is compiled into each mod separately: the mods do not depend on each other. -->
+    <Compile Include="../Common/ModContext.cs;../Common/ModLocalization.cs;../Common/AbTest.cs;../Common/PlayerLoopUtil.cs" LinkBase="Common" />
+    <!-- PLib provides the standard mod settings window (a button in the mod list; Mod Manager shows the same one).
+         It is placed in the mod folder as a separate file next to OniFixes.dll. -->
+    <PackageReference Include="PLib" Version="4.25.0" />
+    <ModLibrary Include="PLib.dll" />
+    <!-- Native kernels: put into the mod only if built (scripts/build-native.sh). Without them the mod runs the game's code. -->
+    <ModExtraFiles Include="../../native/build/oni_native.bin" Condition="Exists('../../native/build/oni_native.bin')" />
+    <!-- Translations of the mod's own strings (ModStrings.cs), if present. -->
+    <ModTranslations Include="translations/*.po" />
+  </ItemGroup>
+</Project>

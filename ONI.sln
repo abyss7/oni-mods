@@ -1,0 +1,55 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{FE62DDDB-3167-4FB0-8D32-397501239D57}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OniFixes", "src\OniFixes\OniFixes.csproj", "{ED0CACFF-D520-4869-B8A3-28EAACE60D31}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OniProfiler", "src\OniProfiler\OniProfiler.csproj", "{8D1D4BB3-1972-495C-B93A-E82F1D298587}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OniGasMix", "src\OniGasMix\OniGasMix.csproj", "{54A154A6-9002-4EE3-9248-1BD885186B1C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OniPressure", "src\OniPressure\OniPressure.csproj", "{ED580876-5702-4FC9-B164-6392CD103242}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OniLiquidMix", "src\OniLiquidMix\OniLiquidMix.csproj", "{97F62AF1-7EA3-4D6E-B387-AD1FE415DC10}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{ED0CACFF-D520-4869-B8A3-28EAACE60D31}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED0CACFF-D520-4869-B8A3-28EAACE60D31}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED0CACFF-D520-4869-B8A3-28EAACE60D31}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED0CACFF-D520-4869-B8A3-28EAACE60D31}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8D1D4BB3-1972-495C-B93A-E82F1D298587}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8D1D4BB3-1972-495C-B93A-E82F1D298587}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8D1D4BB3-1972-495C-B93A-E82F1D298587}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8D1D4BB3-1972-495C-B93A-E82F1D298587}.Release|Any CPU.Build.0 = Release|Any CPU
+		{54A154A6-9002-4EE3-9248-1BD885186B1C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{54A154A6-9002-4EE3-9248-1BD885186B1C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{54A154A6-9002-4EE3-9248-1BD885186B1C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{54A154A6-9002-4EE3-9248-1BD885186B1C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ED580876-5702-4FC9-B164-6392CD103242}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED580876-5702-4FC9-B164-6392CD103242}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED580876-5702-4FC9-B164-6392CD103242}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED580876-5702-4FC9-B164-6392CD103242}.Release|Any CPU.Build.0 = Release|Any CPU
+		{97F62AF1-7EA3-4D6E-B387-AD1FE415DC10}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{97F62AF1-7EA3-4D6E-B387-AD1FE415DC10}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{97F62AF1-7EA3-4D6E-B387-AD1FE415DC10}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{97F62AF1-7EA3-4D6E-B387-AD1FE415DC10}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{ED0CACFF-D520-4869-B8A3-28EAACE60D31} = {FE62DDDB-3167-4FB0-8D32-397501239D57}
+		{8D1D4BB3-1972-495C-B93A-E82F1D298587} = {FE62DDDB-3167-4FB0-8D32-397501239D57}
+		{54A154A6-9002-4EE3-9248-1BD885186B1C} = {FE62DDDB-3167-4FB0-8D32-397501239D57}
+		{ED580876-5702-4FC9-B164-6392CD103242} = {FE62DDDB-3167-4FB0-8D32-397501239D57}
+		{97F62AF1-7EA3-4D6E-B387-AD1FE415DC10} = {FE62DDDB-3167-4FB0-8D32-397501239D57}
+	EndGlobalSection
+EndGlobal

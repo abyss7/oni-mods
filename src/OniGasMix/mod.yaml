@@ -1,0 +1,3 @@
+title: "OniGasMix"
+description: "Gas mixtures: every gas cell holds the mass of each gas separately. Gases mix, spread by pressure and settle by weight; the composition is shown in the tooltip and on the mixtures overlay (shared with the liquid mixtures mod). Windows only (hooks the game's native simulation)."
+staticID: "abyss.OniGasMix"

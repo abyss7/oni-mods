@@ -1,0 +1,3 @@
+title: "OniFixes"
+description: "Performance optimizations and fixes to game logic. Faster item search for errands, with an option to pick items by the whole trip to the delivery point; cell textures and Duplicant clothing are not recomputed without need. Fixes: tool and overlay settings are kept in the save, buildings no longer show a stuck animation frame, items on conveyors are drawn at the right depth, stay visible in standing boxes and ride into the receptacle together with their box. Every change has its own setting."
+staticID: "abyss.OniFixes"

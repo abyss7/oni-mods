@@ -1,0 +1,12 @@
+# Local working folders that are not part of the project.
+/decompiled/
+/tools/
+bench/
+bin/
+obj/
+*.user
+.vs/
+native/build/
+sim/build/
+__pycache__/
+/docs/

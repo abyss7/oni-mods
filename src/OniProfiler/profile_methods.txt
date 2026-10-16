@@ -1,0 +1,46 @@
+# Methods the profiler wraps with a time measurement (inclusive time, together with nested calls).
+# Format: Type:Method. All overloads are wrapped. Lines starting with # are ignored.
+# The file is read at game start, the mod does not need a rebuild to change the list.
+# Check new lines with a test run: a bad patch can crash the game at startup.
+
+# --- top level of the frame
+Game:Update
+Game:LateUpdate
+Game:SimEveryTick
+Game:UnsafeSim200ms
+Global:Update
+Global:LateUpdate
+GameScheduler:Update
+StateMachineUpdater:AdvanceOneSimSubTick
+StateMachineUpdater:Render
+StateMachineUpdater:RenderEveryTick
+
+# --- boundary with the native simulation (SimDLL): nothing inside it can be changed from C#
+Sim:HandleMessage
+SimMessages:NewGameFrame
+World:UpdateCellInfo
+
+# --- pathfinding and AI
+Pathfinding:UpdateNavGrids
+Pathfinding:RenderEveryTick
+BrainScheduler:RenderEveryTick
+AsyncPathProber+Manager:TickFrame
+Brain:UpdateBrain
+ChoreConsumer:FindNextChore
+GlobalChoreProvider:UpdateFetches
+FetchManager:UpdatePickups
+
+# --- networks
+ConduitFlow:Sim200ms
+SolidConduitFlow:Sim200ms
+CircuitManager:Sim200msLast
+
+# --- rendering and animations
+KBatchedAnimUpdater:LateUpdate
+KAnimBatchManager:UpdateDirty
+KAnimBatchManager:Render
+PropertyTextures:LateUpdate
+PropertyTextures:UpdateProperty
+PropertyTextures:UpdateTextureThreaded
+TextureBuffer:Lock
+TextureBuffer:Unlock

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>OniLiquidMix</AssemblyName>
+    <RootNamespace>OniLiquidMix</RootNamespace>
+    <Version>0.1.0</Version>
+    <IsOniMod>true</IsOniMod>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- PLib provides the standard mod options window. It goes into the mod folder as a separate file next to OniLiquidMix.dll. -->
+    <PackageReference Include="PLib" Version="4.25.0" />
+    <ModLibrary Include="PLib.dll" />
+    <!-- The shared code of our mods is compiled into each mod separately: the mods do not depend on each other. -->
+    <Compile Include="../Common/ModContext.cs;../Common/SimHooks.cs;../Common/ModLocalization.cs;../Common/MixtureUi.cs" LinkBase="Common" />
+    <!-- Hooks on simulation functions (sim/build.sh): the shared engine and the liquid mixture plugin. Without them the mod does nothing. -->
+    <ModExtraFiles Include="../../sim/build/oni_simhook.bin" Condition="Exists('../../sim/build/oni_simhook.bin')" />
+    <ModExtraFiles Include="../../sim/build/oni_liquidmix.bin" Condition="Exists('../../sim/build/oni_liquidmix.bin')" />
+    <!-- Translations of the mod's own strings (ModStrings.cs), if any. -->
+    <ModTranslations Include="translations/*.po" />
+  </ItemGroup>
+</Project>

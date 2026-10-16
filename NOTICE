@@ -1,0 +1,22 @@
+ONI mods: OniProfiler, OniFixes, OniGasMix, OniPressure, OniLiquidMix
+Copyright 2026 Ivan Lezhankin
+https://github.com/abyss7/oni-mods
+
+This project is licensed under the Apache License, Version 2.0 (see LICENSE).
+Under section 4(d) of the license, any redistribution of this work or of a
+derivative work (including mods built on this code and published on the Steam
+Workshop or elsewhere) must keep the attribution notices of this NOTICE file:
+credit to Ivan Lezhankin and a link to https://github.com/abyss7/oni-mods,
+shown where such notices normally appear (for a mod: its description page and
+a NOTICE file shipped with it).
+
+Third-party code:
+- MinHook (sim/hook/third_party/minhook), Copyright (C) 2009-2017
+  Tsuda Kageyu, BSD 2-Clause License, see
+  sim/hook/third_party/minhook/LICENSE.txt.
+- The mods use PLib by Peter Han (MIT License), fetched from NuGet at build
+  time and shipped as PLib.dll next to the mod.
+
+Oxygen Not Included is a trademark of Klei Entertainment. This project is not
+affiliated with or endorsed by Klei Entertainment. No game code or game assets
+are included in this repository.

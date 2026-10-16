@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>OniProfiler</AssemblyName>
+    <RootNamespace>OniProfiler</RootNamespace>
+    <Version>0.1.0</Version>
+    <IsOniMod>true</IsOniMod>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The shared code of our mods is compiled into each mod separately: the mods do not depend on each other. -->
+    <Compile Include="../Common/ModContext.cs;../Common/SimHooks.cs" LinkBase="Common" />
+    <ModExtraFiles Include="profile_methods.txt" />
+    <!-- Native kernels for the NativeProbe experiment: put into the mod only if they are built (scripts/build-native.sh). -->
+    <ModExtraFiles Include="../../native/build/oni_native.bin" Condition="Exists('../../native/build/oni_native.bin')" />
+    <!-- Call counters on simulation functions (SimProbes): the shared hook engine (sim/build.sh).
+         The profiler carries no plugins. -->
+    <ModExtraFiles Include="../../sim/build/oni_simhook.bin" Condition="Exists('../../sim/build/oni_simhook.bin')" />
+  </ItemGroup>
+</Project>

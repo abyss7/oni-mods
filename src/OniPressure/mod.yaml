@@ -1,0 +1,3 @@
+title: "OniPressure"
+description: "Pressure-dependent phase changes: boiling, evaporation and condensation depend on pressure and carry latent heat. Pressure is counted by gas mass or by molecules (set in the mod options). Works with or without the gas mixture mod (using partial pressures), and with the liquid mixture mod (a mixture's vapour pressure follows Raoult's law). Pressure on walls is only measured for now (marker file pressure_survey.txt). Windows only (hooks the game's native simulation)."
+staticID: "abyss.OniPressure"
