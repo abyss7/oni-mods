@@ -9,14 +9,14 @@ namespace OniDup
 	/// Digging and building without the hiccups: a duplicant who has to step aside stops and comes back properly, and finishes
 	/// the dig or the build they started.
 	///
-	/// - Pushed out of solid ground while working (sand falls on them, a tile is finished in their cell, liquid freezes
-	///   around them): the game moves the duplicant to a free cell next to it and plays the idle animation, but the work goes
+	/// - Moved to another cell while working (by the game: out of a door that closed on them, back into the world from beyond
+	///   its edge; being buried no longer moves anyone, see DupEntombed): the game plays the idle animation, but the work goes
 	///   on: the duplicant stands still and the work progresses from a cell that may not even reach it. Now the work stops
 	///   there, and the duplicant comes back to it by the usual way, with the animation and the progress bar.
 	/// - A dig or a build that finishes in the first half second of the tool's swing: the "work done" signal comes before the
 	///   swing loop starts and is lost, so the duplicant keeps swinging for 10 s with no progress bar until the game gives up
 	///   waiting. Now the tool goes straight to its final animation.
-	/// - After a short break (a cough, a reaction, a push out of the ground) a duplicant picks the next errand afresh and
+	/// - After a short break (a cough, a reaction) a duplicant picks the next errand afresh and
 	///   often takes another tile of the same priority, leaving the started one half done. Now among errands of the same
 	///   priority they come back to a dig or a build they started, unless it is more than two steps further than the other.
 	/// </summary>
@@ -150,7 +150,7 @@ namespace OniDup
 				return;
 			}
 			lastReport = now;
-			Debug.Log($"{ModContext.Tag} work: stopped after a push out of the ground {escapes}, swings finished early {swings}, started digs and builds resumed {resumes}");
+			Debug.Log($"{ModContext.Tag} work: stopped after a move {escapes}, swings finished early {swings}, started digs and builds resumed {resumes}");
 		}
 	}
 }
