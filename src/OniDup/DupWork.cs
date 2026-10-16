@@ -16,6 +16,12 @@ namespace OniDup
 	/// - A dig or a build that finishes in the first half second of the tool's swing: the "work done" signal comes before the
 	///   swing loop starts and is lost, so the duplicant keeps swinging for 10 s with no progress bar until the game gives up
 	///   waiting. Now the tool goes straight to its final animation.
+	/// - Working through a wall: the game picks the cell to work from when the duplicant sets off and keeps it all the way,
+	///   even if a tile built or a block dug on the way changes which cells can reach the work (a dig on the diagonal needs a
+	///   free corner). On arrival the duplicant works through the new wall, and goes on working if a wall appears during the
+	///   work. Now on the way the cells are checked again at every step, so the duplicant turns to a cell that still reaches
+	///   the work or gives up if none does; and a duplicant who finds themselves working from a cell that no longer reaches the
+	///   work stops and picks the errand again.
 	/// - After a short break (a cough, a reaction) a duplicant picks the next errand afresh and
 	///   often takes another tile of the same priority, leaving the started one half done. Now among errands of the same
 	///   priority they come back to a dig or a build they started, unless it is more than two steps further than the other.
@@ -26,7 +32,8 @@ namespace OniDup
 
 		internal static string Mode { get; private set; } = "off";
 
-		private static int escapes, swings, resumes;
+		private static int escapes, swings, resumes, rerouted, walls;
+		private static readonly HashSet<WorkerBase> stopping = new HashSet<WorkerBase>();
 		private static float lastReport = float.MinValue;
 
 		internal static void Apply(Harmony harmony)
@@ -37,6 +44,8 @@ namespace OniDup
 					postfix: new HarmonyMethod(typeof(DupWork), nameof(AfterEscape)));
 				harmony.Patch(AccessTools.Method(typeof(StandardWorker), "StartPlayingPostAnim"), postfix: new HarmonyMethod(typeof(DupWork), nameof(FinishSwing)));
 				harmony.Patch(AccessTools.Method(typeof(ChoreConsumer), "ChooseChore"), prefix: new HarmonyMethod(typeof(DupWork), nameof(ResumeStarted)));
+				harmony.Patch(AccessTools.Method(typeof(Navigator), nameof(Navigator.AdvancePath)), prefix: new HarmonyMethod(typeof(DupWork), nameof(FreshOffsets)));
+				harmony.Patch(AccessTools.Method(typeof(StandardWorker), nameof(StandardWorker.Work)), prefix: new HarmonyMethod(typeof(DupWork), nameof(CheckReach)));
 				Mode = "on";
 			}
 			catch (Exception e)
@@ -72,6 +81,87 @@ namespace OniDup
 				swings++;
 				Report();
 			}
+		}
+
+		/// <summary>A dig or a build that the chore works on (the workable whose cells reach it are checked), or null.</summary>
+		private static Workable DigOrBuild(Chore chore)
+		{
+			if (chore == null || chore.gameObject == null)
+			{
+				return null;
+			}
+			if (chore is WorkChore<Diggable>)
+			{
+				return chore.gameObject.GetComponent<Diggable>();
+			}
+			return chore is WorkChore<Constructable> ? chore.gameObject.GetComponent<Constructable>() : null;
+		}
+
+		/// <summary>
+		/// On the way to a dig or a build: the cells that reach it as they are now, not as they were when the duplicant set off.
+		/// The game checks the reserved cell against these offsets at every step and picks another cell if it is no longer one.
+		/// </summary>
+		private static void FreshOffsets(Navigator __instance)
+		{
+			KMonoBehaviour target = __instance.target;
+			if (target == null || __instance.targetOffsets == null)
+			{
+				return;
+			}
+			ChoreDriver driver = __instance.GetComponent<ChoreDriver>();
+			Chore chore = driver != null ? driver.GetCurrentChore() : null;
+			Workable workable = DigOrBuild(chore);
+			if (workable == null || workable.gameObject != target.gameObject)
+			{
+				return;
+			}
+			CellOffset[] offsets = workable.GetOffsets();
+			if (offsets != __instance.targetOffsets)
+			{
+				int reserved = __instance.reservedCell;
+				if (reserved != NavigationReservations.InvalidReservation && Grid.IsCellOffsetOf(reserved, Grid.PosToCell(target), __instance.targetOffsets) &&
+					!Grid.IsCellOffsetOf(reserved, Grid.PosToCell(target), offsets))
+				{
+					rerouted++;
+					Report();
+				}
+				__instance.targetOffsets = offsets;
+			}
+		}
+
+		/// <summary>
+		/// While digging or building: the duplicant's cell must still reach the work. If not, the errand stops (on the next
+		/// frame, outside the game's work update) and the duplicant picks it again from a cell that does reach it.
+		/// </summary>
+		private static void CheckReach(StandardWorker __instance)
+		{
+			if (__instance.GetState() != WorkerBase.State.Working)
+			{
+				return;
+			}
+			Workable workable = __instance.GetWorkable();
+			if (!(workable is Diggable || workable is Constructable) || stopping.Contains(__instance))
+			{
+				return;
+			}
+			int cell = Grid.PosToCell(__instance);
+			if (Grid.IsCellOffsetOf(cell, Grid.PosToCell(workable), workable.GetOffsets()))
+			{
+				return;
+			}
+			stopping.Add(__instance);
+			walls++;
+			Report();
+			GameScheduler.Instance.Schedule("OniDup.StopWorkThroughWall", 0f, data =>
+			{
+				var worker = (StandardWorker)data;
+				stopping.Remove(worker);
+				ChoreDriver driver = worker != null ? worker.GetComponent<ChoreDriver>() : null;
+				if (driver != null && worker.GetState() == WorkerBase.State.Working && worker.GetWorkable() == workable)
+				{
+					driver.StopChore();
+				}
+			}, __instance);
 		}
 
 		/// <summary>
@@ -150,7 +240,7 @@ namespace OniDup
 				return;
 			}
 			lastReport = now;
-			Debug.Log($"{ModContext.Tag} work: stopped after a move {escapes}, swings finished early {swings}, started digs and builds resumed {resumes}");
+			Debug.Log($"{ModContext.Tag} work: stopped after a move {escapes}, swings finished early {swings}, started digs and builds resumed {resumes}, turned on the way to a cell that still reaches the work {rerouted}, stopped working through a wall {walls}");
 		}
 	}
 }
