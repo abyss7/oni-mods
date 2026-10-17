@@ -109,6 +109,9 @@ namespace OniDup
 				{
 					OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
 					verifyFrame = 1000;
+					// The check is for test runs: the game is closed once the pictures are taken.
+					Debug.Log($"{ModContext.Tag} overlay verify: done, closing the game");
+					App.Quit();
 				}
 			}
 			catch (Exception e)
