@@ -157,6 +157,8 @@ namespace onilight
 		bool active = false; // its light is in the grid
 		bool kept = false;   // taken out of the grid, its light kept to be put back with another brightness
 		SourceDesc desc{};
+		float traced = 0.0f; // the brightness its light was traced with (the entries are for it)
+		float scale = 1.0f;  // the share of it in the grid (a light bug dimmed)
 		std::vector<Entry> direct, scattered;
 	};
 
@@ -251,18 +253,17 @@ namespace onilight
 		float Through(int cell) const { return through_[cell]; }
 
 		// Adds a source under an id (replacing it if it is in the grid) and puts its light into the light grid. A source
-		// taken out with keep and added again with only another brightness is rescaled. Returns the cells lit directly.
+		// taken out with keep and added again with only another brightness, not above the one it was traced with, is
+		// rescaled (exactly: light dropped as too faint when traced stays too faint). Returns the cells lit directly.
 		int Add(const GridView& g, int id, const SourceDesc& d)
 		{
 			if (id < 0 || w_ == 0) return 0;
 			if ((size_t)id >= sources_.size()) sources_.resize((size_t)id + 1);
 			Source& s = sources_[id];
 			if (s.active) Remove(g, id, false);
-			if (s.kept && SameShape(s.desc, d) && s.desc.lux > 0.0f && d.lux > 0.0f)
+			if (s.kept && SameShape(s.desc, d) && s.traced > 0.0f && d.lux >= 0.0f && d.lux <= s.traced)
 			{
-				const float k = d.lux / s.desc.lux;
-				for (Entry& e : s.direct) e.value *= k;
-				for (Entry& e : s.scattered) e.value *= k;
+				s.scale = d.lux / s.traced;
 				counters_.rescales++;
 			}
 			else
@@ -270,6 +271,8 @@ namespace onilight
 				s.direct.clear();
 				s.scattered.clear();
 				if (d.lux > 0.0f && d.range > 0.0f) Compute(g, d, s.direct, s.scattered);
+				s.traced = d.lux;
+				s.scale = 1.0f;
 				counters_.traces++;
 			}
 			s.desc = d;
@@ -339,15 +342,18 @@ namespace onilight
 			std::vector<Entry> d, sc, bounce, bounceAll;
 			for (const Source& s : sources_)
 			{
-				if (!s.active || !(s.desc.lux > 0.0f) || !(s.desc.range > 0.0f)) continue;
+				if (!s.active || !(s.traced > 0.0f) || !(s.desc.range > 0.0f)) continue;
+				SourceDesc traced = s.desc;
+				traced.lux = s.traced;
 				d.clear();
 				sc.clear();
-				Compute(g, s.desc, d, sc);
-				for (const Entry& e : d) direct[e.cell] += e.value;
-				for (const Entry& e : sc) scattered[e.cell] += e.value;
+				Compute(g, traced, d, sc);
+				for (const Entry& e : d) direct[e.cell] += s.scale * e.value;
+				for (const Entry& e : sc) scattered[e.cell] += s.scale * e.value;
 				bounce.clear();
 				d.clear();
-				Trace(s.desc, d, bounce);
+				Trace(traced, d, bounce);
+				for (Entry& e : bounce) e.value *= s.scale;
 				bounceAll.insert(bounceAll.end(), bounce.begin(), bounce.end());
 			}
 			const Rect grid{ 0, 0, w_ - 1, h_ - 1 };
@@ -389,6 +395,7 @@ namespace onilight
 
 		void Apply(const GridView& g, Source& s, float sign)
 		{
+			sign *= s.scale;
 			for (const Entry& e : s.direct)
 			{
 				direct_[e.cell] += sign * e.value;
