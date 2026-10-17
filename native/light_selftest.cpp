@@ -206,10 +206,13 @@ namespace
 		Expect(bendSnow > bendDark * 3 && bendSnow > 0, "round the corner: a snow shaft gets light, an abyssalite one little", bendSnow, bendDark);
 	}
 
-	// Many updates in a base-like grid against a full computation; removing everything leaves nothing.
-	void Updates()
+	// Many updates in a base-like grid against a full computation; removing everything leaves nothing. With a variant
+	// below the widest, only the light grid is returned (for comparing the variants of the transport).
+	std::vector<int32_t> Updates(int variant)
 	{
 		Fixture f(Grid(200, 160, Granite, Granite));
+		f.engine.LimitVariant(variant);
+		const bool narrower = variant < 1;
 		srand(3);
 		for (int ry = 4; ry + 12 < 160; ry += 13)
 			for (int rx = 4; rx + 22 < 200; rx += 24)
@@ -241,6 +244,8 @@ namespace
 				if (!(f.grid.buildMasks[f.grid.Cell(d.x, d.y)] & 1)) { lamps[k] = d; f.engine.Add(g, k, d); }
 			}
 		}
+		const std::vector<int32_t> result = f.grid.light;
+		if (narrower) return result;
 		float check[4];
 		f.engine.Check(g, { 0, 0, f.grid.w - 1, f.grid.h - 1 }, check);
 		Expect(check[0] < 0.05f, "updates: direct light as computed again", check[0], 0);
@@ -267,6 +272,22 @@ namespace
 			left = std::max(left, (double)fabsf(f.engine.Direct(c)) + fabsf(f.engine.Scattered(c)));
 		}
 		Expect(lit == 0 && left < 0.05, "removing everything: nothing left", lit, left);
+		return result;
+	}
+
+	// The SSE2 and the AVX variants of the transport give the same light grid.
+	void Variants()
+	{
+		const std::vector<int32_t> widest = Updates(1);
+		if (!HasAvx())
+		{
+			printf("skipped: the transport's variants (no AVX here)\n");
+			return;
+		}
+		const std::vector<int32_t> plain = Updates(0);
+		int differ = 0;
+		for (size_t c = 0; c < widest.size(); c++) differ += widest[c] != plain[c];
+		Expect(differ == 0, "the transport: SSE2 gives the same light grid as AVX", differ, 0);
 	}
 
 	// A change of brightness alone gives what tracing again gives.
@@ -294,7 +315,7 @@ int main()
 	LiquidAndGlass();
 	Shapes();
 	Reflection();
-	Updates();
+	Variants();
 	Rescale();
 	if (failures)
 	{

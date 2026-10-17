@@ -7,7 +7,8 @@
 // radius; solid cells block and are not lit themselves; lux = Lux / max(1, round(0.5 * d)), d the distance "by cells"
 // (steps), 0 past the radius; each lit cell is checked against the list already found (a linear search), as in the game.
 //
-//   g++ -O3 -mavx -std=c++20 -o light_model sim/model/light_model.cpp && ./light_model out_dir
+//   g++ -O3 -ffp-contract=off -std=c++20 -o light_model sim/model/light_model.cpp && ./light_model out_dir [sse2]
+// (sse2: the transport's SSE2 variant even if the processor has AVX)
 //   python3 sim/model/light_model.py out_dir
 #include <chrono>
 #include <cstdio>
@@ -304,6 +305,8 @@ static double Now()
 int main(int argc, char** argv)
 {
 	const std::string out = argc > 1 ? argv[1] : ".";
+	const std::string limit = argc > 2 ? argv[2] : "";
+	const int variant = limit == "sse2" ? 0 : 1;
 	World world;
 	MakeBase(world, 256, 384, 7);
 	std::vector<int> open;
@@ -329,6 +332,8 @@ int main(int argc, char** argv)
 		onilight::Engine engine;
 		engine.Init(world.w, world.h);
 		engine.SetElements(elements.data(), (int)elements.size());
+		engine.LimitVariant(variant);
+		if (count == 200) printf("transport: %s\n", engine.Variant());
 		std::fill(world.lightCount.begin(), world.lightCount.end(), 0);
 		t0 = Now();
 		for (int k = 0; k < count; k++) engine.Add(view, k, Desc(sources[k].x, sources[k].y, sources[k].lux, (float)sources[k].range, sources[k].cone));
@@ -380,6 +385,7 @@ int main(int argc, char** argv)
 		onilight::Engine engine;
 		engine.Init(world.w, world.h);
 		engine.SetElements(elements.data(), (int)elements.size());
+		engine.LimitVariant(variant);
 		srand(13);
 		std::vector<int> gameGrid(world.w * world.h, 0);
 		game::Lit gl;

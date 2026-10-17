@@ -37,6 +37,10 @@
 #include <algorithm>
 #include <vector>
 
+#include <cpuid.h>
+
+#define ONI_LIGHT_INLINE __attribute__((always_inline)) inline
+
 namespace onilight
 {
 	constexpr int Steps = 12;                 // how far the reflected light is carried, in cells
@@ -168,9 +172,27 @@ namespace onilight
 		int64_t traces, rescales, removes, tracedOffsets, opticsCells, transportCells, writtenCells;
 	};
 
+	// Whether the processor has AVX and whether the system saves its registers on thread switches. The library is built
+	// for any x86-64 processor (SSE2); the transport, where nearly all the time goes, has a second variant built for AVX,
+	// chosen at run time. Both compute the same numbers bit for bit (no fused multiply-add): only the vector width
+	// differs. (An AVX-512 variant gave 8% on a Zen 4 against AVX: the rows are short and the rest is not vector work.)
+	inline bool HasAvx()
+	{
+		static const bool has = []
+		{
+			unsigned int a = 0, b = 0, c = 0, d = 0;
+			if (!__get_cpuid(1, &a, &b, &c, &d)) return false;
+			if ((c & (1u << 27)) == 0 || (c & (1u << 28)) == 0) return false; // OSXSAVE and AVX
+			unsigned int low = 0, high = 0;
+			__asm__("xgetbv" : "=a"(low), "=d"(high) : "c"(0));
+			return (low & 6) == 6; // XMM and YMM registers
+		}();
+		return has;
+	}
+
 	// One step of the transport, in two passes over plain arrays (so the compiler vectorises them).
 	// Spreading: a share of the light of each cell turns evenly into the four directions, and the cell keeps r of it.
-	static void SpreadStep(size_t n, const float* __restrict r, const float* __restrict fE, const float* __restrict fW, const float* __restrict fN,
+	ONI_LIGHT_INLINE void SpreadStep(size_t n, const float* __restrict r, const float* __restrict fE, const float* __restrict fW, const float* __restrict fN,
 		const float* __restrict fS, float* __restrict gE, float* __restrict gW, float* __restrict gN, float* __restrict gS)
 	{
 		const float keep = 1.0f - Spread, turn = Spread * 0.25f;
@@ -188,7 +210,7 @@ namespace onilight
 	// Moving one row of cells on by a cell: light comes in from the neighbour behind (times what the cell lets through);
 	// light that met a solid side comes back by its reflectance, half straight back and a quarter to each side. The cell's
 	// sum gathers what is in it after the step. gNb: the row below (light moving north), gSa: the row above.
-	static void MoveRow(int count, const float* __restrict gE, const float* __restrict gW, const float* __restrict gN, const float* __restrict gS,
+	ONI_LIGHT_INLINE void MoveRow(int count, const float* __restrict gE, const float* __restrict gW, const float* __restrict gN, const float* __restrict gS,
 		const float* __restrict gNb, const float* __restrict gSa, const float* __restrict t, const float* __restrict aE, const float* __restrict aW,
 		const float* __restrict aN, const float* __restrict aS, float* __restrict fE, float* __restrict fW, float* __restrict fN, float* __restrict fS,
 		float* __restrict sum)
@@ -212,7 +234,7 @@ namespace onilight
 
 	// The transport's coefficients of a row: what each cell lets through, and what it keeps of the light that does not
 	// leave the plane (open cells only; solid cells keep nothing).
-	static void SetupRow(int count, const float* __restrict t, const float* __restrict albedo, float* __restrict T, float* __restrict R)
+	ONI_LIGHT_INLINE void SetupRow(int count, const float* __restrict t, const float* __restrict albedo, float* __restrict T, float* __restrict R)
 	{
 		for (int x = 0; x < count; x++)
 		{
@@ -223,7 +245,7 @@ namespace onilight
 	}
 
 	// What comes back from one side of each cell of a row: the side's reflectance if the cell is open and the side solid.
-	static void SideRow(int count, const float* __restrict t, const float* __restrict side, const float* __restrict sideAlbedo, float* __restrict out)
+	ONI_LIGHT_INLINE void SideRow(int count, const float* __restrict t, const float* __restrict side, const float* __restrict sideAlbedo, float* __restrict out)
 	{
 		for (int x = 0; x < count; x++) out[x] = t[x] > 0.0f && side[x] <= 0.0f ? sideAlbedo[x] : 0.0f;
 	}
@@ -245,6 +267,11 @@ namespace onilight
 		}
 
 		void SetElements(const ElementOptics* table, int count) { elements_.assign(table, table + count); }
+
+		// For checks and measurements: the widest variant of the transport allowed (0 SSE2, 1 AVX); the processor may
+		// allow less.
+		void LimitVariant(int widest) { variant_ = widest; }
+		const char* Variant() const { return variant_ >= 1 && HasAvx() ? "avx" : "sse2"; }
 
 		int Width() const { return w_; }
 		int Height() const { return h_; }
@@ -570,9 +597,27 @@ namespace onilight
 			}
 		}
 
+		int variant_ = 1; // the widest allowed: 0 SSE2, 1 AVX
+
+		__attribute__((target("avx"), noinline)) void TransportAvx(const Rect& region, const std::vector<Entry>& bounce, std::vector<Entry>& out)
+		{
+			TransportBody(region, bounce, out);
+		}
+
+		__attribute__((noinline)) void TransportPlain(const Rect& region, const std::vector<Entry>& bounce, std::vector<Entry>& out)
+		{
+			TransportBody(region, bounce, out);
+		}
+
 		// Scattered light carried from reflected light (cells inside `region`, at least Steps away from its edges unless
 		// at the grid's edge) over `region`; the optics of `region` widened by 1 must be fresh.
 		void Transport(const Rect& region, const std::vector<Entry>& bounce, std::vector<Entry>& out)
+		{
+			if (variant_ >= 1 && HasAvx()) TransportAvx(region, bounce, out);
+			else TransportPlain(region, bounce, out);
+		}
+
+		ONI_LIGHT_INLINE void TransportBody(const Rect& region, const std::vector<Entry>& bounce, std::vector<Entry>& out)
 		{
 			// Local arrays with a border of one empty cell.
 			const int lw = region.x1 - region.x0 + 3, lh = region.y1 - region.y0 + 3;

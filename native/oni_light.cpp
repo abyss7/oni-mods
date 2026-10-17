@@ -3,7 +3,7 @@
 // main thread.
 //
 // Build: scripts/build-native.sh (cross-compiled for Windows x64, the game runs under Proton).
-// Vector instructions: AVX at most (the mod is public: AVX2 and FMA are not assumed).
+// Built for any x86-64 processor (SSE2); the transport also has an AVX variant chosen at run time (oni_light_variant).
 
 #include "oni_grid.h"
 #include "oni_light.h"
@@ -23,7 +23,13 @@ ONI_EXPORT int32_t oni_light_abi()
 
 ONI_EXPORT const char* oni_light_info()
 {
-	return "oni_light abi " ONI_STRINGIFY(ONI_LIGHT_ABI) ", " __VERSION__ ", AVX";
+	return "oni_light abi " ONI_STRINGIFY(ONI_LIGHT_ABI) ", " __VERSION__ ", SSE2 with AVX chosen at run time";
+}
+
+// The variant of the transport this processor runs: "avx" or "sse2".
+ONI_EXPORT const char* oni_light_variant()
+{
+	return engine.Variant();
 }
 
 // A new grid (a game loaded): every source is dropped.
