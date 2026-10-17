@@ -244,7 +244,8 @@ namespace OniDup
 				// The deep colours (vacuum, the last steps of Carbon Dioxide) are lightened more, keeping the order of the steps.
 				float lighten = band == Band.Vacuum ? 0.4f : band == Band.Blackout ? 0.45f : band == Band.Poisoning ? 0.35f : band == Band.Headache ? 0.25f : 0.1f;
 				Color text = Color.Lerp(colour, Color.white, lighten);
-				lastNote = " " + string.Format(STRINGS.ELEMENTS.BREATHABLEDESC, text.ToHexString(), name);
+				// A no-break space: the tooltip drops an ordinary space in front of a colour tag.
+				lastNote = "\u00A0" + string.Format(STRINGS.ELEMENTS.BREATHABLEDESC, text.ToHexString(), name);
 			}
 			__result[3] = lastNote;
 		}
