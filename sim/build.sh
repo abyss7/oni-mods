@@ -15,7 +15,7 @@ minhook="$here/hook/third_party/minhook"
 # In the mod folder the libraries are not stored as .dll: the game loads every *.dll there as a managed assembly.
 build_library() { # name_without_extension sources...
   local name="$1"; shift
-  "$ZIG" c++ -target x86_64-windows-gnu -O2 -fno-exceptions -fno-rtti -Wno-nullability-completeness -shared \
+  "$ZIG" c++ -target x86_64-windows-gnu -O2 -fno-exceptions -fno-rtti -ffp-contract=off -Wno-nullability-completeness -shared \
     -I "$here/hook" -I "$minhook/include" -o "$out/$name.dll" "$@"
   mv "$out/$name.dll" "$out/$name.bin"
 }
@@ -38,13 +38,13 @@ symbols="$(ls "$here"/re/symbols/SimDLL-*.tsv 2>/dev/null | tail -1 || true)"
 [ "${1:-}" = "--no-test" ] && exit 0
 # The gas mixture layer kernel does not depend on the game: it is built for this machine and checked against the Python model.
 # Same flags as the plugin (any x86-64, no AVX): otherwise the step time in the check comes out better than in the game.
-"$ZIG" c++ -target x86_64-linux-gnu -O2 -fno-exceptions -fno-rtti -Wno-nullability-completeness -o "$out/kernel_check" "$here/model/kernel_check.cpp"
+"$ZIG" c++ -target x86_64-linux-gnu -O2 -fno-exceptions -fno-rtti -ffp-contract=off -Wno-nullability-completeness -o "$out/kernel_check" "$here/model/kernel_check.cpp"
 (cd "$ONI_ROOT" && python3 -I sim/model/kernel_check.py "$out/kernel_check")
 # The liquid/vapour equilibrium rules do not depend on the game either.
-"$ZIG" c++ -target x86_64-linux-gnu -O2 -fno-exceptions -fno-rtti -Wno-nullability-completeness -o "$out/phase_check" "$here/model/phase_check.cpp"
+"$ZIG" c++ -target x86_64-linux-gnu -O2 -fno-exceptions -fno-rtti -ffp-contract=off -Wno-nullability-completeness -o "$out/phase_check" "$here/model/phase_check.cpp"
 "$out/phase_check"
 # Liquid mixture rules: picking the substance by composition, density, inventory.
-"$ZIG" c++ -target x86_64-linux-gnu -O2 -fno-exceptions -fno-rtti -Wno-nullability-completeness -o "$out/liquid_check" "$here/model/liquid_check.cpp"
+"$ZIG" c++ -target x86_64-linux-gnu -O2 -fno-exceptions -fno-rtti -ffp-contract=off -Wno-nullability-completeness -o "$out/liquid_check" "$here/model/liquid_check.cpp"
 "$out/liquid_check"
 # A separate Wine prefix: the game's prefix is left alone. It lives outside the project folder: the prefix has a
 # dosdevices/z: link to the filesystem root, and editors and file indexers that follow links would walk the entire disk.

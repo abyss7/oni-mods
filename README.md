@@ -144,11 +144,13 @@ Mod settings go the same way: in the mod's `Options.cs` each setting has the key
 
 ## Native code in mods
 
-A mod can compute over game data in C++ code. Sources are in `native/`; the library `oni_native.bin` is needed by `OniFixes` (texture kernels) and `OniProfiler` (trial kernels), each with its own copy in its folder:
+A mod can compute over game data in C++ code. Sources are in `native/`; the library `oni_native.bin` is needed by `OniFixes` (texture kernels) and `OniProfiler` (trial kernels), each with its own copy in its folder; the library `oni_light.bin` (the light engine) by `OniLight`:
 
 - `native/oni_grid.h`: shared grid description for the kernels (`OniGridView`: sizes, active world, pointers to simulation and game arrays), the texture rectangle to write, result codes and the structure version number `ONI_NATIVE_ABI`;
 - `native/oni_textures.cpp`: filling cell property textures (fog of war, digging, mass), the working kernels of the OniFixes mod;
 - `native/oni_native.cpp`: trial kernels (grid summary in scalar and AVX variants, counting cells with an element);
+- `native/oni_cpu.h`: what the processor can do (AVX), for choosing a kernel's variant at run time;
+- `native/oni_light.h`, `native/oni_light.cpp`, `native/light_selftest.cpp`: the light engine of `OniLight` and its check without the game;
 - `native/selftest.cpp`: check on Linux without the game: kernels are compared with a direct transcription of the game logic, bad ranges must be rejected;
 - `scripts/build-native.sh`: self-check and cross-compilation for Windows x64 with the local Zig from `tools/zig` (no administrator rights needed);
 - `src/OniFixes/NativeLib.cs`: loader. `LoadLibrary`, structure version check, functions via `GetProcAddress`;
@@ -179,7 +181,7 @@ Things to know:
 - The library is built for Windows, like the game (on Linux the game runs through Proton).
 - C++ standard library threads (`std::thread`, `std::mutex`, `std::condition_variable`) work under Proton; the build picks up no extra dependencies.
 - The mod loader tries to load every `*.dll` in the mod folder as a managed assembly and, on a native library, refuses to load the whole mod. So the library is placed in the mod as `oni_native.bin`: `LoadLibrary` does not care about the extension.
-- Vector instructions are limited to AVX, without AVX2 and FMA: players' processors vary, and older ones (Ivy Bridge) lack them. There are no 256-bit integer operations; integers are packed in 128-bit halves.
+- Players' processors vary. The libraries are built for any x86-64 processor (SSE2, given explicitly with `-mcpu=x86_64`: zig without `-target` builds for this machine's processor); a kernel where the time goes gets a second variant for AVX (`__attribute__((target("avx")))`), chosen at run time by `OniHasAvx()` (`native/oni_cpu.h`). The variants must give the same result (no FMA: built with `-ffp-contract=off`), and the self-checks run both and compare. Never build a whole library with `-mavx`: on a processor without AVX it stops. Within AVX there are no 256-bit integer operations; integers are packed in 128-bit halves. A wider variant (AVX-512) is kept only where it is measured to pay; for the light transport it gave 8% on a Zen 4 and was not kept. The simulation plugins (`sim/plugins`) follow the same rule: the gas mixture step has both variants, the liquid and pressure plugins work cell by cell with branches and have only the plain one.
 - Writing results through `uint8_t*` hampers the compiler: by the language rules such a pointer may point to anything. Kernel parameters must be copied into local variables, otherwise the loop bounds are re-read on every cell.
 - Random test data inflates the time several times (unpredictable branches). Measure time on coherent data, as in the game, and make per-cell data choices with masks and tables.
 - Only flat arrays are accessible from C++. Game objects (duplicants, buildings, chores) live in managed memory and stay on the C# side.

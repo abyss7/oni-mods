@@ -107,7 +107,8 @@ namespace OniFixes
 					return false;
 				}
 				TexFill = Bind<TexFillFn>(module, "oni_tex_fill");
-				Info = Marshal.PtrToStringAnsi(Bind<InfoFn>(module, "oni_native_info")());
+				Info = Marshal.PtrToStringAnsi(Bind<InfoFn>(module, "oni_native_info")()) + "; this processor: " +
+					Marshal.PtrToStringAnsi(Bind<InfoFn>(module, "oni_native_variant")());
 				Available = true;
 			}
 			catch (Exception e)

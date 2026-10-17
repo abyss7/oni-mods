@@ -5,11 +5,11 @@
 // The C# mod passes pointers to these arrays here without copying.
 //
 // Build: scripts/build-native.sh (cross-compiled for Windows x64, the game runs under Proton).
-// Vector instructions: AVX. AVX2 and FMA are deliberately not used: the CPU of the work machine
-// (Ivy Bridge) does not support them.
+// Built for any x86-64 processor (SSE2); kernels with an AVX variant choose it at run time (oni_cpu.h).
 
 #include <immintrin.h>
 
+#include "oni_cpu.h"
 #include "oni_grid.h"
 
 // Layout must match the GridStats struct in NativeProbe.cs.
@@ -33,7 +33,13 @@ ONI_EXPORT int32_t oni_native_abi()
 
 ONI_EXPORT const char* oni_native_info()
 {
-	return "oni_native abi " ONI_STRINGIFY(ONI_NATIVE_ABI) ", " __VERSION__ ", AVX";
+	return "oni_native abi " ONI_STRINGIFY(ONI_NATIVE_ABI) ", " __VERSION__ ", SSE2 with AVX chosen at run time";
+}
+
+// The variant the kernels run on this processor: "avx" or "sse2".
+ONI_EXPORT const char* oni_native_variant()
+{
+	return OniHasAvx() ? "avx" : "sse2";
 }
 
 ONI_EXPORT void oni_grid_stats_scalar(const float* mass, const float* temperature, int32_t count, float hotThreshold, GridStats* out)
@@ -56,7 +62,7 @@ ONI_EXPORT void oni_grid_stats_scalar(const float* mass, const float* temperatur
 	*out = stats;
 }
 
-static inline double horizontal_sum(__m256d v)
+__attribute__((target("avx"))) static inline double horizontal_sum(__m256d v)
 {
 	__m128d low = _mm256_castpd256_pd128(v);
 	__m128d high = _mm256_extractf128_pd(v, 1);
@@ -64,7 +70,7 @@ static inline double horizontal_sum(__m256d v)
 	return _mm_cvtsd_f64(_mm_add_sd(sum, _mm_unpackhi_pd(sum, sum)));
 }
 
-ONI_EXPORT void oni_grid_stats_avx(const float* mass, const float* temperature, int32_t count, float hotThreshold, GridStats* out)
+__attribute__((target("avx"), noinline)) static void GridStatsAvx(const float* mass, const float* temperature, int32_t count, float hotThreshold, GridStats* out)
 {
 	const __m256 zero = _mm256_setzero_ps();
 	const __m256 threshold = _mm256_set1_ps(hotThreshold);
@@ -129,6 +135,14 @@ ONI_EXPORT void oni_grid_stats_avx(const float* mass, const float* temperature, 
 		}
 	}
 	*out = stats;
+}
+
+// The same with AVX, 8 cells at a time; without AVX the scalar one (the sums may differ in the last digits: AVX adds in
+// four lanes).
+ONI_EXPORT void oni_grid_stats_avx(const float* mass, const float* temperature, int32_t count, float hotThreshold, GridStats* out)
+{
+	if (OniHasAvx()) GridStatsAvx(mass, temperature, count, hotThreshold, out);
+	else oni_grid_stats_scalar(mass, temperature, count, hotThreshold, out);
 }
 
 // How many cells are occupied by the given element. Element indices are 16-bit; compared 8 at a time (SSE2).

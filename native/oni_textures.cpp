@@ -5,7 +5,21 @@
 #include <immintrin.h>
 #include <string.h>
 
+#include "oni_cpu.h"
 #include "oni_grid.h"
+
+// The widest variant the kernels may use (0 SSE2, 1 AVX), for the self-check; the processor may allow less.
+static int texVariant = 1;
+
+ONI_EXPORT void oni_native_limit_variant(int32_t widest)
+{
+	texVariant = widest;
+}
+
+static bool TexAvx()
+{
+	return texVariant >= 1 && OniHasAvx();
+}
 
 static inline uint8_t ToByte(float v)
 {
@@ -37,7 +51,8 @@ static void FillFogOfWar(const OniGridView g, const OniTextureTarget t, int32_t 
 		{
 			const __m128i own = _mm_and_si128(_mm_cmpeq_epi8(_mm_loadu_si128((const __m128i*)(world + x)), activeV), anyActiveV);
 			const __m128i other = clampValid ? _mm_loadu_si128((const __m128i*)(clamp + x)) : _mm_setzero_si128();
-			_mm_storeu_si128((__m128i*)out, _mm_blendv_epi8(other, _mm_loadu_si128((const __m128i*)(visible + x)), own));
+			const __m128i mine = _mm_loadu_si128((const __m128i*)(visible + x));
+			_mm_storeu_si128((__m128i*)out, _mm_or_si128(_mm_and_si128(own, mine), _mm_andnot_si128(own, other))); // SSE2: no blendv
 		}
 		for (; x <= t.x1; x++)
 		{
@@ -68,10 +83,27 @@ static void FillSolidDigAmount(const OniGridView g, const OniTextureTarget t)
 }
 
 // Share of the cell mass out of 2000 kg as a byte, for count consecutive cells. Any non-zero mass gives at least 1.
-// Moved out of the main loop because the division is the most expensive thing in it, and separately it is computed 8 cells at once.
-static void MassAmountBytes(const float* mass, uint8_t* out, int32_t count)
+// Moved out of the main loop because the division is the most expensive thing in it, and separately it is computed several
+// cells at once: 8 with AVX, 4 with SSE2. Both variants do the same operations in the same order, so the bytes are equal.
+static const float Least = 0.003921569f; // 1/255, as written in the game
+
+static ONI_INLINE void MassAmountTail(const float* mass, uint8_t* out, int32_t i, int32_t count)
 {
-	const float Least = 0.003921569f; // 1/255, as written in the game
+	for (; i < count; i++)
+	{
+		const float m = mass[i];
+		float amount = m / 2000.0f;
+		amount = 1.0f < amount ? 1.0f : amount;
+		if (m > 0.0f)
+		{
+			amount = Least > amount ? Least : amount;
+		}
+		out[i] = ToByte(amount * 255.0f);
+	}
+}
+
+__attribute__((target("avx"), noinline)) static void MassAmountBytesAvx(const float* mass, uint8_t* out, int32_t count)
+{
 	int32_t i = 0;
 	const __m256 full = _mm256_set1_ps(2000.0f), one = _mm256_set1_ps(1.0f), least = _mm256_set1_ps(Least), scale = _mm256_set1_ps(255.0f);
 	for (; i + 8 <= count; i += 8)
@@ -85,17 +117,32 @@ static void MassAmountBytes(const float* mass, uint8_t* out, int32_t count)
 		const __m128i bytes16 = _mm_packus_epi32(_mm256_castsi256_si128(bytes32), _mm256_extractf128_si256(bytes32, 1));
 		_mm_storel_epi64((__m128i*)(out + i), _mm_packus_epi16(bytes16, bytes16));
 	}
-	for (; i < count; i++)
+	MassAmountTail(mass, out, i, count);
+}
+
+__attribute__((noinline)) static void MassAmountBytesSse2(const float* mass, uint8_t* out, int32_t count)
+{
+	int32_t i = 0;
+	const __m128 full = _mm_set1_ps(2000.0f), one = _mm_set1_ps(1.0f), least = _mm_set1_ps(Least), scale = _mm_set1_ps(255.0f);
+	for (; i + 4 <= count; i += 4)
 	{
-		const float m = mass[i];
-		float amount = m / 2000.0f;
-		amount = 1.0f < amount ? 1.0f : amount;
-		if (m > 0.0f)
-		{
-			amount = Least > amount ? Least : amount;
-		}
-		out[i] = ToByte(amount * 255.0f);
+		const __m128 m = _mm_loadu_ps(mass + i);
+		const __m128 amount = _mm_min_ps(one, _mm_div_ps(m, full));
+		const __m128 positive = _mm_cmpgt_ps(m, _mm_setzero_ps());
+		const __m128 visible = _mm_or_ps(_mm_and_ps(positive, _mm_max_ps(least, amount)), _mm_andnot_ps(positive, amount));
+		const __m128i bytes32 = _mm_cvttps_epi32(_mm_mul_ps(visible, scale));
+		// The values are 0..255: packing with signed saturation to 16 bits keeps them (SSE2 has no unsigned 32-bit pack).
+		const __m128i bytes16 = _mm_packs_epi32(bytes32, bytes32);
+		const int32_t four = _mm_cvtsi128_si32(_mm_packus_epi16(bytes16, bytes16));
+		memcpy(out + i, &four, 4);
 	}
+	MassAmountTail(mass, out, i, count);
+}
+
+static void MassAmountBytes(const float* mass, uint8_t* out, int32_t count)
+{
+	if (TexAvx()) MassAmountBytesAvx(mass, out, count);
+	else MassAmountBytesSse2(mass, out, count);
 }
 
 static void FillSolidLiquidGasMass(const OniGridView g, const OniTextureTarget t, bool markImpermeable)

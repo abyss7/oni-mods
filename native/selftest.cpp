@@ -161,7 +161,16 @@ int main()
 	printf("per call: scalar %.1f us, avx %.1f us\n",
 		std::chrono::duration<double, std::micro>(t1 - t0).count() / reps,
 		std::chrono::duration<double, std::micro>(t2 - t1).count() / reps);
+	// The texture kernels with each variant: both must match the game's logic byte for byte.
+	oni_native_limit_variant(0);
+	printf("textures, SSE2:\n");
 	ok = TestTextures() && ok;
+	if (OniHasAvx())
+	{
+		oni_native_limit_variant(1);
+		printf("textures, AVX:\n");
+		ok = TestTextures() && ok;
+	}
 	printf("%s\n", ok ? "SELFTEST OK" : "SELFTEST FAILED");
 	return ok ? 0 : 1;
 }

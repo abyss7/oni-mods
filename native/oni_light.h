@@ -37,9 +37,9 @@
 #include <algorithm>
 #include <vector>
 
-#include <cpuid.h>
+#include "oni_cpu.h"
 
-#define ONI_LIGHT_INLINE __attribute__((always_inline)) inline
+#define ONI_LIGHT_INLINE ONI_INLINE
 
 namespace onilight
 {
@@ -172,23 +172,11 @@ namespace onilight
 		int64_t traces, rescales, removes, tracedOffsets, opticsCells, transportCells, writtenCells;
 	};
 
-	// Whether the processor has AVX and whether the system saves its registers on thread switches. The library is built
-	// for any x86-64 processor (SSE2); the transport, where nearly all the time goes, has a second variant built for AVX,
-	// chosen at run time. Both compute the same numbers bit for bit (no fused multiply-add): only the vector width
-	// differs. (An AVX-512 variant gave 8% on a Zen 4 against AVX: the rows are short and the rest is not vector work.)
-	inline bool HasAvx()
-	{
-		static const bool has = []
-		{
-			unsigned int a = 0, b = 0, c = 0, d = 0;
-			if (!__get_cpuid(1, &a, &b, &c, &d)) return false;
-			if ((c & (1u << 27)) == 0 || (c & (1u << 28)) == 0) return false; // OSXSAVE and AVX
-			unsigned int low = 0, high = 0;
-			__asm__("xgetbv" : "=a"(low), "=d"(high) : "c"(0));
-			return (low & 6) == 6; // XMM and YMM registers
-		}();
-		return has;
-	}
+	// The library is built for any x86-64 processor (SSE2); the transport, where nearly all the time goes, has a second
+	// variant built for AVX, chosen at run time (oni_cpu.h). Both compute the same numbers bit for bit (no fused
+	// multiply-add): only the vector width differs. (An AVX-512 variant gave 8% on a Zen 4 against AVX: the rows are short
+	// and the rest is not vector work.)
+	inline bool HasAvx() { return OniHasAvx(); }
 
 	// One step of the transport, in two passes over plain arrays (so the compiler vectorises them).
 	// Spreading: a share of the light of each cell turns evenly into the four directions, and the cell keeps r of it.
