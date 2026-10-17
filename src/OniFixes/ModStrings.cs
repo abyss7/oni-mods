@@ -29,6 +29,12 @@ namespace OniFixes
 				public static LocString TOOLTIP = "Tool modes (deconstruct only buildings and the like), the lists in overlay legends (materials, temperature mode, germs) are written to the save file and come back after loading. Which overlay was open is not kept. A save opened without the mod loads as usual.";
 			}
 
+			public static class QUICKPILLS
+			{
+				public static LocString NAME = "Quick pills";
+				public static LocString TOOLTIP = "Duplicants take a pill in 2 seconds instead of 10: they sit down, swallow it and get up, instead of sitting frozen with puffed cheeks. The pill works the same.";
+			}
+
 			public static class REDRAWONANIMSTART
 			{
 				public static LocString NAME = "Redraw animations when they start";

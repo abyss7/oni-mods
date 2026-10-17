@@ -36,6 +36,10 @@ namespace OniFixes
 		[JsonProperty]
 		public bool ConveyorArrivals { get; set; } = true;
 
+		[Option(Key + "QUICKPILLS.NAME", Key + "QUICKPILLS.TOOLTIP", Key + "CATEGORY.FIXES")]
+		[JsonProperty]
+		public bool QuickPills { get; set; } = true;
+
 		[Option(Key + "DEMANDDRIVENFETCH.NAME", Key + "DEMANDDRIVENFETCH.TOOLTIP", Key + "CATEGORY.DUPLICANTS")]
 		[JsonProperty]
 		public bool DemandDrivenFetch { get; set; } = true;

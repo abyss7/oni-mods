@@ -589,7 +589,8 @@ namespace OniDup
 			if ((taken && !taking) || t >= 90f)
 			{
 				float still = pillStill.TryGetValue(room, out float value) ? value : -1f;
-				Expect(room, taken && pillStart.ContainsKey(room) && still < 1f, dupe, $"taken {taken}, standing still {still:F1} s while taking it");
+				float took = pillStart.ContainsKey(room) ? pillLast[room] - pillStart[room] : -1f;
+				Expect(room, taken && pillStart.ContainsKey(room) && still < 1f, dupe, $"taken {taken} in {took:F1} s, standing still {still:F1} s while taking it");
 			}
 		}
 
