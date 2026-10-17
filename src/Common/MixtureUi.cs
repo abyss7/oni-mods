@@ -469,7 +469,7 @@ namespace OniCommon
 				// A view that replaces the oxygen overlay's normal one: always on, no list; the legend is still built from code
 				// (its own rows, without the game's).
 				Dictionary<string, object> replacing = mixtures ? null : Replacing();
-				ToolParameterMenu.ToggleData[] toggles = replacing != null ? new ToolParameterMenu.ToggleData[0] : mixtures ? MixturesToggles() : OxygenToggles();
+				ToolParameterMenu.ToggleData[] toggles = replacing != null ? new ToolParameterMenu.ToggleData[0] : mixtures ? MixturesToggles(followSelection: true) : OxygenToggles();
 				__instance.legendFilters = toggles.Length > (mixtures ? 0 : 1) ? toggles : null;
 				// The legend builds a selection list only for overlays marked as "filled from code" (like the temperature one).
 				List<OverlayLegend.OverlayInfo> infos = OverlayLegend.Instance?.overlayInfoList;
@@ -577,7 +577,9 @@ namespace OniCommon
 		/// substances open under it ("– GASES") and the other group closes. The group with the current selection is open. With no
 		/// selection the first substance of the first group is selected: the overlay always shows something.
 		/// </summary>
-		private static ToolParameterMenu.ToggleData[] MixturesToggles()
+		/// <param name="followSelection">the overlay is being opened: the group with the selection opens; otherwise the
+		/// groups stay as the player left them</param>
+		private static ToolParameterMenu.ToggleData[] MixturesToggles(bool followSelection)
 		{
 			var toggles = new List<ToolParameterMenu.ToggleData>();
 			List<Dictionary<string, object>> groups = providers.FindAll(provider => !IsFlat(provider));
@@ -605,7 +607,7 @@ namespace OniCommon
 				}
 				string id = (string)provider["id"];
 				string current = Get<Func<string>>(provider, "current")?.Invoke();
-				if (current != null && choices.Exists(choice => choice[0] == current))
+				if (followSelection && current != null && choices.Exists(choice => choice[0] == current))
 				{
 					expanded = id;
 				}
@@ -646,7 +648,7 @@ namespace OniCommon
 		{
 			string id = groupOfHeading[heading];
 			expanded = expanded == id ? null : id;
-			mode.legendFilters = MixturesToggles();
+			mode.legendFilters = MixturesToggles(followSelection: false);
 			// The menu is rebuilt on the next frame, outside its own click handler.
 			UIScheduler.Instance.Schedule("MixtureUi.ToggleGroup", 0f, _ =>
 			{
