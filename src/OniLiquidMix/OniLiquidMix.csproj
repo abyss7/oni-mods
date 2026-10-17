@@ -16,5 +16,7 @@
     <ModExtraFiles Include="../../sim/build/oni_liquidmix.bin" Condition="Exists('../../sim/build/oni_liquidmix.bin')" />
     <!-- Translations of the mod's own strings (ModStrings.cs), if any. -->
     <ModTranslations Include="translations/*.po" />
+    <!-- The mixtures overlay icon (src/Common/MixtureUi.cs, drawn by scripts/draw_overlay_icon.py). -->
+    <EmbeddedResource Include="../Common/overlay_mixtures.png" LogicalName="OniCommon.overlay_mixtures.png" />
   </ItemGroup>
 </Project>

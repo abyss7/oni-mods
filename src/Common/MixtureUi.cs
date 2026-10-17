@@ -311,8 +311,8 @@ namespace OniCommon
 		}
 
 		/// <summary>
-		/// The button icon, drawn here (no picture file to carry in every mod): three bubbles of different sizes, white on
-		/// transparent like the game's overlay icons, the middle one a ring. Put among the game's sprites once.
+		/// The button icon: overlay_mixtures.png (drawn by scripts/draw_overlay_icon.py in the style of the game's overlay icons),
+		/// built into each mod that carries this code. Put among the game's sprites once.
 		/// </summary>
 		private static bool LoadIcon()
 		{
@@ -320,36 +320,36 @@ namespace OniCommon
 			{
 				return true;
 			}
-			const int size = 64;
-			// Bubbles: centre x, y, outer radius, inner radius (0: filled).
-			float[,] bubbles = { { 22f, 24f, 16f, 0f }, { 44f, 38f, 14f, 8.5f }, { 22f, 50f, 8f, 0f } };
-			var pixels = new Color32[size * size];
-			for (int y = 0; y < size; y++)
+			try
 			{
-				for (int x = 0; x < size; x++)
+				byte[] png;
+				using (System.IO.Stream stream = typeof(MixtureUi).Assembly.GetManifestResourceStream("OniCommon.overlay_mixtures.png"))
 				{
-					float alpha = 0f;
-					for (int b = 0; b < bubbles.GetLength(0); b++)
+					if (stream == null)
 					{
-						float distance = Mathf.Sqrt((x + 0.5f - bubbles[b, 0]) * (x + 0.5f - bubbles[b, 0]) + (y + 0.5f - bubbles[b, 1]) * (y + 0.5f - bubbles[b, 1]));
-						// Soft edges one pixel wide.
-						float inside = Mathf.Clamp01(bubbles[b, 2] - distance + 0.5f);
-						if (bubbles[b, 3] > 0f)
-						{
-							inside *= Mathf.Clamp01(distance - bubbles[b, 3] + 0.5f);
-						}
-						alpha = Mathf.Max(alpha, inside);
+						return false;
 					}
-					pixels[(size - 1 - y) * size + x] = new Color32(255, 255, 255, (byte)(alpha * 255f));
+					png = new byte[stream.Length];
+					stream.Read(png, 0, png.Length);
 				}
+				// ImageConversion lives in a module the mods do not reference; the call goes through reflection.
+				System.Reflection.MethodInfo load = Type.GetType("UnityEngine.ImageConversion, UnityEngine.ImageConversionModule")
+					?.GetMethod("LoadImage", new[] { typeof(Texture2D), typeof(byte[]), typeof(bool) });
+				var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, name = IconName };
+				if (load == null || !(bool)load.Invoke(null, new object[] { texture, png, false }))
+				{
+					return false;
+				}
+				Sprite sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f));
+				sprite.name = IconName;
+				Assets.Sprites.Add(IconName, sprite);
+				return true;
 			}
-			var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, name = IconName };
-			texture.SetPixels32(pixels);
-			texture.Apply();
-			Sprite sprite = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-			sprite.name = IconName;
-			Assets.Sprites.Add(IconName, sprite);
-			return true;
+			catch (Exception e)
+			{
+				Debug.LogWarning($"{ModContext.Tag} mixture interface: the mixtures overlay icon could not be loaded: {e.Message}");
+				return false;
+			}
 		}
 
 		/// <summary>Under the cursor and in cell selection the mixtures overlay picks gas and liquid cells, as the oxygen one picks gas.</summary>

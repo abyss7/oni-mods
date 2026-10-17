@@ -13,5 +13,7 @@
     <Compile Include="../Common/ModContext.cs;../Common/ModLocalization.cs;../Common/MixtureUi.cs" LinkBase="Common" />
     <!-- Translations of the mod's own strings (ModStrings.cs), if any. -->
     <ModTranslations Include="translations/*.po" />
+    <!-- The mixtures overlay icon (src/Common/MixtureUi.cs, drawn by scripts/draw_overlay_icon.py). -->
+    <EmbeddedResource Include="../Common/overlay_mixtures.png" LogicalName="OniCommon.overlay_mixtures.png" />
   </ItemGroup>
 </Project>

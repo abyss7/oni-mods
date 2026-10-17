@@ -15,6 +15,8 @@ namespace OniDup
 	/// boil in deep blue; too much Oxygen in yellow and orange; Carbon Dioxide on its own purple scale, from stuffy air to a
 	/// blackout, wherever it harms at least as much as the Oxygen there.
 	/// Each cell is shown by its own air (as if a Duplicant without a mask breathed it).
+	/// The same band, named and coloured, is the note after a gas cell's mass in the cursor tooltip, instead of the game's
+	/// "(Very Breathable)" and the like.
 	/// </summary>
 	internal static class DupAirOverlay
 	{
@@ -35,6 +37,9 @@ namespace OniDup
 				["colour"] = (Func<int, Color>)Colour,
 				["legend"] = (Func<List<LegendEntry>>)Legend,
 			});
+			// After every other postfix: the gas mixture mod writes its own note there.
+			harmony.Patch(AccessTools.Method(typeof(HoverTextHelper), nameof(HoverTextHelper.MassStringsReadOnly)),
+				postfix: new HarmonyMethod(typeof(DupAirOverlay), nameof(HoverNote)) { priority = Priority.Last });
 			if (File.Exists(Path.Combine(ModContext.Folder, "verify_dup_overlay.txt")))
 			{
 				harmony.Patch(AccessTools.Method(typeof(Game), "LateUpdate"), postfix: new HarmonyMethod(typeof(DupAirOverlay), nameof(VerifyStep)));
@@ -137,22 +142,28 @@ namespace OniDup
 			widget.GetComponentInChildren<MultiToggle>().onClick();
 		}
 
-		/// <summary>Called by the game from worker threads for each visible cell.</summary>
-		private static Color Colour(int cell)
+		/// <summary>Breathing conditions of a cell's air, in the order of the legend.</summary>
+		private enum Band { None, Toxic, Rich, Normal, Thin, Lightheaded, Gasping, Unbreathable, Vacuum, Stuffy, Headache, Poisoning, Blackout }
+
+		/// <summary>The cell's band and its colour on the map; None for a liquid, a solid or an invalid cell. Safe on worker threads.</summary>
+		private static Band Classify(int cell, out Color colour)
 		{
+			colour = Color.black;
 			if (!Grid.IsValidCell(cell) || Grid.IsLiquid(cell) || Grid.Solid[cell])
 			{
-				return Color.black;
+				return Band.None;
 			}
 			DupAir.Air air = DupAir.CellAir(cell);
 			if (air.Pressure < DupAir.Vapour)
 			{
-				return VacuumColour;
+				colour = VacuumColour;
+				return Band.Vacuum;
 			}
 			float oxygen = DupAir.Lungs(air);
 			if (oxygen < DupAir.Severe)
 			{
-				return SimDebugView.Instance.unbreathableColour; // the breath is held: Carbon Dioxide does not matter
+				colour = SimDebugView.Instance.unbreathableColour; // the breath is held: Carbon Dioxide does not matter
+				return Band.Unbreathable;
 			}
 			// Oxygen and Carbon Dioxide on a common scale of harm; the worse shows, Carbon Dioxide when they are equal.
 			int oxygenHarm = oxygen >= DupAir.OxygenToxic ? 3 : oxygen >= DupAir.OxygenRich ? 1
@@ -160,17 +171,79 @@ namespace OniDup
 			int carbon = CarbonLevel(air.CarbonDioxide);
 			if (carbon > 0 && carbon >= oxygenHarm)
 			{
-				return CarbonColours[carbon - 1];
+				colour = CarbonColours[carbon - 1];
+				return Band.Stuffy + (carbon - 1);
 			}
 			if (oxygen >= DupAir.OxygenToxic)
 			{
-				return ToxicColour;
+				colour = ToxicColour;
+				return Band.Toxic;
 			}
 			if (oxygen >= DupAir.OxygenRich)
 			{
-				return RichColour;
+				colour = RichColour;
+				return Band.Rich;
 			}
-			return Scale(oxygen);
+			colour = Scale(oxygen);
+			return oxygen >= DupAir.Normal ? Band.Normal : oxygen >= DupAir.Thin ? Band.Thin : oxygen >= DupAir.Hypoxic ? Band.Lightheaded : Band.Gasping;
+		}
+
+		/// <summary>Called by the game from worker threads for each visible cell.</summary>
+		private static Color Colour(int cell)
+		{
+			Classify(cell, out Color colour);
+			return colour;
+		}
+
+		/// <summary>
+		/// The note after a gas cell's mass under the cursor ("(Very Breathable)" in the game, by the mass of breathable gas): the
+		/// cell's breathing band by this mod's scale, in its colour (the darker map colours lightened to read on the dark card).
+		/// After the gas mixture mod's own note, which this replaces.
+		/// </summary>
+		private static void HoverNote(int cell, string[] __result)
+		{
+			if (__result == null || __result.Length < 4 || !Grid.IsValidCell(cell) || !(Grid.Element[cell].IsGas || Grid.Element[cell].IsVacuum))
+			{
+				return;
+			}
+			Band band = Classify(cell, out Color colour);
+			string name = BandName(band);
+			if (name == null)
+			{
+				return;
+			}
+			if (band != lastBand || colour != lastColour)
+			{
+				lastBand = band;
+				lastColour = colour;
+				Color text = Color.Lerp(colour, Color.white, band == Band.Vacuum || band >= Band.Headache ? 0.45f : 0.1f);
+				lastNote = " " + string.Format(STRINGS.ELEMENTS.BREATHABLEDESC, text.ToHexString(), name);
+			}
+			__result[3] = lastNote;
+		}
+
+		private static Band lastBand = Band.None;
+		private static Color lastColour;
+		private static string lastNote = "";
+
+		private static string BandName(Band band)
+		{
+			switch (band)
+			{
+				case Band.Toxic: return ONIDUP.OVERLAY.TOXIC;
+				case Band.Rich: return ONIDUP.OVERLAY.RICH;
+				case Band.Normal: return ONIDUP.OVERLAY.NORMAL;
+				case Band.Thin: return ONIDUP.OVERLAY.THIN;
+				case Band.Lightheaded: return ONIDUP.OVERLAY.LIGHTHEADED;
+				case Band.Gasping: return ONIDUP.OVERLAY.GASPING;
+				case Band.Unbreathable: return ONIDUP.OVERLAY.UNBREATHABLE;
+				case Band.Vacuum: return ONIDUP.OVERLAY.VACUUM;
+				case Band.Stuffy: return ONIDUP.OVERLAY.STUFFY;
+				case Band.Headache: return ONIDUP.OVERLAY.HEADACHE;
+				case Band.Poisoning: return ONIDUP.OVERLAY.POISONING;
+				case Band.Blackout: return ONIDUP.OVERLAY.BLACKOUT;
+				default: return null;
+			}
 		}
 
 		private static int CarbonLevel(float kPa)
