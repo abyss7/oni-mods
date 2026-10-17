@@ -14,7 +14,7 @@ namespace OniPressure
 			public static class BYMASS
 			{
 				public static LocString NAME = "Pressure by gas mass";
-				public static LocString TOOLTIP = "How the mass of gas in a cell becomes pressure for boiling and condensation. On: by mass, as everywhere else in the game: one atmosphere is 1.8 kg of any gas in a cell. Off: by molecules, as in physics: a kilogram of hydrogen presses far harder than a kilogram of carbon dioxide, and hot gas presses harder than cold. With the gas mixture mod, gases then spread to even out pressure rather than mass, warm gas rises over cold, and vents, sensors and geysers work by pressure.";
+				public static LocString TOOLTIP = "How the mass of gas in a cell becomes pressure for boiling and condensation. On: by mass, as everywhere else in the game: one atmosphere is 1.8 kg of any gas in a cell. Off: by molecules, as in physics: a kilogram of hydrogen presses far harder than a kilogram of carbon dioxide, and hot gas presses harder than cold. With the gas mixture mod, gases then spread to even out pressure rather than mass, warm gas is lighter than cold, and vents, sensors and geysers work by pressure.";
 			}
 		}
 	}
