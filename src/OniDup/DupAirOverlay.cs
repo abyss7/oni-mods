@@ -75,7 +75,7 @@ namespace OniDup
 				if (frame == 0)
 				{
 					// The "mod differences" dialog of a test run darkens the whole screen: it is closed for the pictures.
-					foreach (ConfirmDialogScreen dialog in UnityEngine.Object.FindObjectsOfType<ConfirmDialogScreen>())
+					foreach (ConfirmDialogScreen dialog in UnityEngine.Object.FindObjectsByType<ConfirmDialogScreen>(FindObjectsSortMode.None))
 					{
 						dialog.Deactivate();
 					}
