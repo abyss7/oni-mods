@@ -44,13 +44,13 @@ namespace OniDup
 
 			public static class CO2HEADACHE
 			{
-				public static LocString NAME = "CO₂ Headache";
+				public static LocString NAME = "CO<sub>2</sub> Headache";
 				public static LocString TOOLTIP = "The <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> in the air is giving this Duplicant a pounding headache";
 			}
 
 			public static class CO2POISONING
 			{
-				public static LocString NAME = "CO₂ Poisoning";
+				public static LocString NAME = "CO<sub>2</sub> Poisoning";
 				public static LocString TOOLTIP = "This Duplicant is dizzy and confused from breathing too much <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects from it";
 			}
 
@@ -79,7 +79,7 @@ namespace OniDup
 			public static LocString THINAIR = "Thin air in the lungs";
 			public static LocString GASPING = "Gasping for Air";
 			public static LocString VACUUM = "Vacuum Exposure";
-			public static LocString CARBONDIOXIDE = "CO₂ Poisoning";
+			public static LocString CARBONDIOXIDE = "CO<sub>2</sub> Poisoning";
 			public static LocString BURIED = "Buried";
 		}
 
@@ -111,12 +111,12 @@ namespace OniDup
 			public static LocString GASPING_TOOLTIP = "<b>Gasping for Air</b>\nDuplicants can barely breathe here and pass out within minutes\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> helps if the pressure isn't too low";
 			public static LocString STUFFY = "Stuffy Air";
 			public static LocString STUFFY_TOOLTIP = "<b>Stuffy Air</b>\nA little <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> in the air: Duplicants grow slightly stressed and learn slower\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects";
-			public static LocString HEADACHE = "CO₂ Headache";
-			public static LocString HEADACHE_TOOLTIP = "<b>CO₂ Headache</b>\nEnough <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> to give Duplicants a headache: they work slower and grow stressed\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects";
-			public static LocString POISONING = "CO₂ Poisoning";
-			public static LocString POISONING_TOOLTIP = "<b>CO₂ Poisoning</b>\nDuplicants are poisoned by <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> here: clumsy, slow and stressed\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects";
-			public static LocString BLACKOUT = "CO₂ Blackout";
-			public static LocString BLACKOUT_TOOLTIP = "<b>CO₂ Blackout</b>\nSo much <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> that Duplicants pass out within a minute and suffocate if left here\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects";
+			public static LocString HEADACHE = "CO<sub>2</sub> Headache";
+			public static LocString HEADACHE_TOOLTIP = "<b>CO<sub>2</sub> Headache</b>\nEnough <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> to give Duplicants a headache: they work slower and grow stressed\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects";
+			public static LocString POISONING = "CO<sub>2</sub> Poisoning";
+			public static LocString POISONING_TOOLTIP = "<b>CO<sub>2</sub> Poisoning</b>\nDuplicants are poisoned by <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> here: clumsy, slow and stressed\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects";
+			public static LocString BLACKOUT = "CO<sub>2</sub> Blackout";
+			public static LocString BLACKOUT_TOOLTIP = "<b>CO<sub>2</sub> Blackout</b>\nSo much <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> that Duplicants pass out within a minute and suffocate if left here\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects";
 			public static LocString UNBREATHABLE = "Unbreathable";
 			public static LocString UNBREATHABLE_TOOLTIP = "<b>Unbreathable</b>\nNot enough <link=\"OXYGEN\">Oxygen</link> to breathe at all\n\nDuplicants hold their breath, then pass out and suffocate if trapped here";
 			public static LocString VACUUM = "Vacuum";

@@ -71,6 +71,7 @@ namespace OniDup
 			try
 			{
 				int frame = ++verifyFrame;
+				// A picture is taken at the end of its frame: whatever is switched after it waits for the next frame.
 				if (frame == 0)
 				{
 					CameraController.Instance.SnapTo(ColonyCentre(), 14f);
@@ -79,22 +80,34 @@ namespace OniDup
 				else if (frame == 30)
 				{
 					Picture("breathable");
+				}
+				else if (frame == 31)
+				{
 					Click(Key);
 				}
 				else if (frame == 60)
 				{
 					Picture("breathing");
+				}
+				else if (frame == 61)
+				{
 					Click(MixtureUi.BaseKey);
 					OverlayScreen.Instance.ToggleOverlay(MixtureUi.MixturesId, allowSound: false);
 				}
 				else if (frame == 90)
 				{
 					Picture("mixtures");
+				}
+				else if (frame == 91)
+				{
 					Click("ONIMIXTUREGROUPLIQUID");
 				}
 				else if (frame == 120)
 				{
 					Picture("liquids");
+				}
+				else if (frame == 121)
+				{
 					OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
 					verifyFrame = 1000;
 				}
