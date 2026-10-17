@@ -1,127 +1,112 @@
-// Prototype of light for the Blackout mode, against the game's own light (LightGridManager, DiscreteShadowCaster), on a
-// grid like a player's base: rooms dug in rock, pools of liquid, windows. Measures the cost of building all lights and of
-// updating one, and writes the light of a scene for pictures (light_model.py).
+// Light for the Blackout mode (native/oni_light.h) against the game's own light (LightGridManager, DiscreteShadowCaster),
+// on a grid like a player's base: rooms dug in rock, pools of water, windows. Measures the cost of building all lights,
+// of updating one (with redoing the light grid around it), by radius, and of the reflected light over the whole grid;
+// checks that the updates give what a full computation gives; writes the light of a scene for pictures (light_model.py).
 //
-//  game: the game's law. Visibility by recursive shadow casting within the radius (straight-line distance); solid cells
-//        block and are not lit themselves; lux = Lux / max(1, round(0.5 * d)), d the distance "by cells" (steps), 0 past
-//        the radius. As in the game, each lit cell is checked against the list already found (a linear search).
-//  new:  light along straight rays from the source: each cell takes the light of the cell before it on the ray from the
-//        source times what that cell lets through; a diagonal step between two cells takes the better of the two side
-//        cells, so light does not slip through a diagonal of blocks. The ray tree (which cell comes before which) is
-//        computed once for all sources. Lux = Lux / max(1, 0.5 * r), r the straight distance, smoothly faded to 0 between R
-//        and 1.5 R instead of the cut. Solid cells take the light that reaches their face (lit walls).
-//        What a cell lets through: gas 1; a liquid by its element, by the law the game's sunlight uses for the share of a
-//        full cell (1 - lightAbsorptionFactor), and as exp(-a * mass / defaultMass) for any mass (Beer-Lambert); a window
-//        0.9; solid 0.
-//        Reflected light: a lit solid face sends lux x reflectance of its material back into the open cell the ray came
-//        from (so it never leaks through the wall); each lit open cell sends lux x reflectance of its back wall (none
-//        reflects nothing). The reflected light then walks a few cells through open cells (Scatter), standing for the
-//        many bounces after the first: the shade of a doorway and the bend of a corridor are in half-light rather than
-//        black, and a pale room is brighter than a dark one under the same lamp.
+// The game's law (ported here for the timings and the pictures): visibility by recursive shadow casting within the
+// radius; solid cells block and are not lit themselves; lux = Lux / max(1, round(0.5 * d)), d the distance "by cells"
+// (steps), 0 past the radius; each lit cell is checked against the list already found (a linear search), as in the game.
 //
-//   g++ -O2 -march=native -std=c++20 -o light_model sim/model/light_model.cpp && ./light_model out_dir
+//   g++ -O3 -mavx -std=c++20 -o light_model sim/model/light_model.cpp && ./light_model out_dir
 //   python3 sim/model/light_model.py out_dir
-#include <algorithm>
 #include <chrono>
-#include <cmath>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
-#include <vector>
 
-enum Kind : uint8_t { Rock, Gas, Liquid, Window };
+#include "../../native/oni_light.h"
 
-// Reflectance of visible light: a few materials of the full table (which lives with the mod).
-namespace reflectance
+using onilight::ElementOptics;
+using onilight::Steps;
+
+// Elements of the model, with reflectances from the mod's table and absorption from the game's data.
+enum Element : uint16_t { Oxygen, Water, PollutedWater, Granite, SandStone, Katairite, Snow, Glass, ElementCount };
+
+static float Absorb(float lightAbsorptionFactor, float defaultMass)
 {
-	constexpr float Granite = 0.25f, SandStone = 0.40f, Katairite = 0.08f, Snow = 0.85f;
+	return -logf(1.0f - std::min(lightAbsorptionFactor, 0.99f)) / defaultMass;
 }
 
-// Share of light a full cell of a liquid lets through, from the game's lightAbsorptionFactor, for any mass (Beer-Lambert).
-static float LiquidThrough(float absorption, float mass, float defaultMass)
+static std::vector<ElementOptics> Elements()
 {
-	const float a = -std::log(1.0f - std::min(absorption, 0.99f));
-	return std::exp(-a * mass / defaultMass);
+	std::vector<ElementOptics> t(ElementCount);
+	t[Oxygen] = { 0.0f, 0.0f, onilight::Gas, {} };
+	t[Water] = { 0.0f, Absorb(0.25f, 1000.0f), onilight::Liquid, {} };
+	t[PollutedWater] = { 0.0f, Absorb(0.7f, 1000.0f), onilight::Liquid, {} };
+	t[Granite] = { 0.25f, 0.0f, onilight::Solid, {} };
+	t[SandStone] = { 0.40f, 0.0f, onilight::Solid, {} };
+	t[Katairite] = { 0.08f, 0.0f, onilight::Solid, {} };
+	t[Snow] = { 0.85f, 0.0f, onilight::Solid, {} };
+	t[Glass] = { 0.08f, 0.0f, onilight::Solid, {} };
+	return t;
 }
 
 struct World
 {
 	int w = 0, h = 0;
-	std::vector<uint8_t> kind;
-	std::vector<float> through; // share of light the cell lets through
-	std::vector<float> albedo;  // a solid cell: reflectance of its material; an open one: of its back wall (0 without one)
-	std::vector<float> walls;   // an open cell: a quarter of the reflectance of each solid side, what scattered light keeps on the walls
+	std::vector<uint16_t> element, backwall, built;
+	std::vector<float> mass;
+	std::vector<uint8_t> properties, buildMasks;
+	std::vector<int32_t> lightCount;
 
 	void Init(int width, int height)
 	{
 		w = width;
 		h = height;
-		kind.assign((size_t)w * h, Rock);
-		through.assign((size_t)w * h, 0.0f);
-		albedo.assign((size_t)w * h, reflectance::Granite);
+		const size_t n = (size_t)w * h;
+		element.assign(n, Granite);
+		backwall.assign(n, Granite);
+		built.assign(n, 0xFFFF);
+		mass.assign(n, 1000.0f);
+		properties.assign(n, 0);
+		buildMasks.assign(n, 1);
+		lightCount.assign(n, 0);
 	}
-	// After the cells are set (and again around a cell that changes).
-	void Finish()
+	void Set(int x, int y, Element e, uint16_t back = 0xFFFF)
 	{
-		walls.assign((size_t)w * h, 0.0f);
-		for (int y = 0; y < h; y++)
-			for (int x = 0; x < w; x++)
-			{
-				if (through[y * w + x] <= 0.0f) continue;
-				float sum = 0.0f;
-				const int nx[4] = { x - 1, x + 1, x, x }, ny[4] = { y, y, y - 1, y + 1 };
-				for (int j = 0; j < 4; j++)
-					if (In(nx[j], ny[j]) && through[ny[j] * w + nx[j]] <= 0.0f) sum += albedo[ny[j] * w + nx[j]];
-				walls[y * w + x] = 0.25f * sum;
-			}
-	}
-	void Set(int x, int y, Kind k, float t, float a)
-	{
-		const int c = y * w + x;
-		kind[c] = k;
-		through[c] = t;
-		albedo[c] = a;
+		const size_t c = (size_t)y * w + x;
+		element[c] = e;
+		backwall[c] = back;
+		mass[c] = e == Oxygen ? 1.8f : 1000.0f;
+		properties[c] = e == Glass ? 0x10 : 0;
+		buildMasks[c] = e == Granite || e == SandStone || e == Katairite || e == Snow || e == Glass ? 1 : 0;
 	}
 	bool In(int x, int y) const { return x >= 0 && y >= 0 && x < w && y < h; }
-	bool Solid(int x, int y) const { return !In(x, y) || kind[y * w + x] == Rock || kind[y * w + x] == Window; }
-	bool Opaque(int x, int y) const { return !In(x, y) || kind[y * w + x] == Rock; }
-	float Through(int x, int y) const { return In(x, y) ? through[y * w + x] : 0.0f; }
+	// What blocks the game's light: solid and not transparent.
+	bool Opaque(int x, int y) const { return !In(x, y) || ((buildMasks[(size_t)y * w + x] & 1) && !(properties[(size_t)y * w + x] & 0x10)); }
+	onilight::GridView View()
+	{
+		return { w, h, element.data(), mass.data(), properties.data(), backwall.data(), buildMasks.data(), built.data(), lightCount.data() };
+	}
 };
-
-static const float Water = LiquidThrough(0.25f, 1000.0f, 1000.0f), PollutedWater = LiquidThrough(0.7f, 1000.0f, 1000.0f);
 
 // A base: granite with rooms 20 x 8 in a lattice, one-cell walls, doorways, a window in some walls, a pool of water in a
 // quarter of the rooms, a staircase of blocks in some; granite back walls.
-static World MakeBase(int w, int h, unsigned seed)
+static void MakeBase(World& world, int w, int h, unsigned seed)
 {
-	World world;
 	world.Init(w, h);
 	srand(seed);
-	const float back = reflectance::Granite;
 	for (int ry = 4; ry + 9 < h; ry += 10)
 	{
 		for (int rx = 4; rx + 21 < w; rx += 22)
 		{
 			if (rand() % 5 == 0) continue; // undug rock
-			for (int y = ry; y < ry + 8; y++) for (int x = rx; x < rx + 20; x++) world.Set(x, y, Gas, 1.0f, back);
-			if (rand() % 4 == 0) for (int y = ry; y < ry + 2; y++) for (int x = rx; x < rx + 20; x++) world.Set(x, y, Liquid, Water, back);
-			if (rand() % 3 == 0) for (int k = 0; k < 4; k++) world.Set(rx + 10 + k, ry + k, Rock, 0.0f, reflectance::Granite);
+			for (int y = ry; y < ry + 8; y++) for (int x = rx; x < rx + 20; x++) world.Set(x, y, Oxygen, Granite);
+			if (rand() % 4 == 0) for (int y = ry; y < ry + 2; y++) for (int x = rx; x < rx + 20; x++) world.Set(x, y, Water, Granite);
+			if (rand() % 3 == 0) for (int k = 0; k < 4; k++) world.Set(rx + 10 + k, ry + k, Granite);
 			// Doorway to the right room and a window above it.
-			for (int y = ry; y < ry + 2; y++) { world.Set(rx + 20, y, Gas, 1.0f, back); world.Set(rx + 21, y, Gas, 1.0f, back); }
-			if (rand() % 2 == 0) { world.Set(rx + 20, ry + 5, Window, 0.9f, 0.0f); world.Set(rx + 21, ry + 5, Window, 0.9f, 0.0f); }
+			for (int y = ry; y < ry + 2; y++) { world.Set(rx + 20, y, Oxygen, Granite); world.Set(rx + 21, y, Oxygen, Granite); }
+			if (rand() % 2 == 0) { world.Set(rx + 20, ry + 5, Glass); world.Set(rx + 21, ry + 5, Glass); }
 		}
 	}
-	world.Finish();
-	return world;
 }
-
-struct Source { int x, y, lux; float range; };
 
 // ---------- The game's light ----------
 
 namespace game
 {
+	struct Source { int x, y, lux, range; bool cone; };
+
 	// Recursive shadow casting over eight octants (the same method as the game's DiscreteShadowCaster).
 	static void Scan(const World& world, int ox, int oy, int range, int row, double start, double end, int xx, int xy, int yx, int yy, std::vector<int>& out)
 	{
@@ -136,7 +121,7 @@ namespace game
 				if (start < r) continue;
 				if (end > l) break;
 				int x = ox + dx * xx + dy * xy, y = oy + dx * yx + dy * yy;
-				bool solid = world.Opaque(x, y); // the game lets light through transparent tiles (windows) and any liquid
+				bool solid = world.Opaque(x, y);
 				if (dx * dx + dy * dy <= range * range && world.In(x, y) && !solid)
 				{
 					int cell = y * world.w + x;
@@ -168,13 +153,15 @@ namespace game
 	{
 		lit.cells.clear();
 		lit.cells.push_back(s.y * world.w + s.x);
-		for (int oct = 0; oct < 8; oct++) Scan(world, s.x, s.y, (int)s.range, 1, 1.0, 0.0, Mult[0][oct], Mult[1][oct], Mult[2][oct], Mult[3][oct], lit.cells);
+		for (int oct = 0; oct < 8; oct++) Scan(world, s.x, s.y, s.range, 1, 1.0, 0.0, Mult[0][oct], Mult[1][oct], Mult[2][oct], Mult[3][oct], lit.cells);
+		if (s.cone) // the game's cone: the quarter below the source (|dx| <= |dy|, dy < 0)
+			lit.cells.erase(std::remove_if(lit.cells.begin() + 1, lit.cells.end(), [&](int c) { int dx = c % world.w - s.x, dy = c / world.w - s.y; return !(dy < 0 && abs(dx) <= -dy); }), lit.cells.end());
 		lit.lux.resize(lit.cells.size());
 		for (size_t k = 0; k < lit.cells.size(); k++)
 		{
 			int cell = lit.cells[k], x = cell % world.w, y = cell / world.w;
-			int d = std::abs(x - s.x) + std::abs(y - s.y);
-			int falloff = std::max(1, (int)std::nearbyint(0.5f * std::max(d, 1))); // the game's RoundToInt: halves to even
+			int d = abs(x - s.x) + abs(y - s.y);
+			int falloff = std::max(1, (int)nearbyintf(0.5f * std::max(d, 1))); // the game's RoundToInt: halves to even
 			lit.lux[k] = s.lux / falloff;
 			grid[cell] += lit.lux[k];
 		}
@@ -186,154 +173,14 @@ namespace game
 	}
 }
 
-// ---------- The new light ----------
-
-namespace light
+static onilight::SourceDesc Desc(int x, int y, int lux, float range, bool cone)
 {
-	// The ray tree for one radius: offsets in order of distance; each has the offset before it on the straight ray from the
-	// source (its parent), whether the step from the parent is diagonal, and the weight of the falloff.
-	struct Tree
-	{
-		std::vector<int16_t> dx, dy;
-		std::vector<int32_t> parent;
-		std::vector<uint8_t> diagonal;
-		std::vector<float> weight;
-	};
-
-	static float Fade(float r, float range)
-	{
-		const float end = 1.5f * range;
-		if (r <= range) return 1.0f;
-		if (r >= end) return 0.0f;
-		const float t = (r - range) / (end - range);
-		return 1.0f - t * t * (3.0f - 2.0f * t);
-	}
-
-	static Tree Build(float range)
-	{
-		Tree tree;
-		const int reach = (int)std::ceil(1.5f * range);
-		struct Off { int dx, dy; float r; };
-		std::vector<Off> offs;
-		for (int dy = -reach; dy <= reach; dy++)
-			for (int dx = -reach; dx <= reach; dx++)
-			{
-				const float r = std::sqrt((float)(dx * dx + dy * dy));
-				if (r <= 1.5f * range) offs.push_back({ dx, dy, r });
-			}
-		std::sort(offs.begin(), offs.end(), [](const Off& a, const Off& b) { return a.r < b.r || (a.r == b.r && (a.dy < b.dy || (a.dy == b.dy && a.dx < b.dx))); });
-		std::vector<int> index((2 * reach + 1) * (2 * reach + 1), -1);
-		auto at = [&](int dx, int dy) -> int& { return index[(dy + reach) * (2 * reach + 1) + dx + reach]; };
-		for (size_t i = 0; i < offs.size(); i++) at(offs[i].dx, offs[i].dy) = (int)i;
-		for (const Off& o : offs)
-		{
-			tree.dx.push_back((int16_t)o.dx);
-			tree.dy.push_back((int16_t)o.dy);
-			// The cell before this one on the straight ray: the last cell of the ray from the source before reaching it.
-			int px = 0, py = 0;
-			if (o.dx != 0 || o.dy != 0)
-			{
-				const int steps = std::max(std::abs(o.dx), std::abs(o.dy));
-				const float sx = (float)o.dx / steps, sy = (float)o.dy / steps;
-				px = (int)std::lround(sx * (steps - 1));
-				py = (int)std::lround(sy * (steps - 1));
-			}
-			tree.parent.push_back(o.dx == 0 && o.dy == 0 ? -1 : at(px, py));
-			tree.diagonal.push_back((uint8_t)(px != o.dx && py != o.dy));
-			tree.weight.push_back(Fade(o.r, range) / std::max(1.0f, 0.5f * o.r));
-		}
-		return tree;
-	}
-
-	// What one source adds: direct light by cell, and reflected light (to be scattered) by cell.
-	struct Lit { std::vector<int> cells; std::vector<float> lux; std::vector<int> bounceCells; std::vector<float> bounce; };
-
-	static void Add(const World& world, const Tree& tree, const Source& s, Lit& lit, std::vector<float>& grid, std::vector<float>& bounceGrid, std::vector<float>& reach)
-	{
-		lit.cells.clear();
-		lit.lux.clear();
-		lit.bounceCells.clear();
-		lit.bounce.clear();
-		const size_t n = tree.dx.size();
-		reach.resize(n);
-		for (size_t i = 0; i < n; i++)
-		{
-			const int x = s.x + tree.dx[i], y = s.y + tree.dy[i];
-			float t = 1.0f;
-			const int p = tree.parent[i];
-			int from = -1;
-			if (p >= 0)
-			{
-				const int px = s.x + tree.dx[p], py = s.y + tree.dy[p];
-				t = reach[p] * (p == 0 ? 1.0f : world.Through(px, py));
-				if (tree.diagonal[i]) t *= std::max(world.Through(x, py), world.Through(px, y));
-				from = py * world.w + px;
-			}
-			reach[i] = t; // light arriving at this cell (before what the cell itself lets through)
-			if (t <= 0.0f || !world.In(x, y)) continue;
-			const float lux = s.lux * tree.weight[i] * t;
-			if (lux < 1.0f) continue;
-			const int cell = y * world.w + x;
-			lit.cells.push_back(cell);
-			lit.lux.push_back(lux);
-			// Reflected: a solid face back into the cell the ray came from, an open cell by its back wall.
-			const float back = lux * world.albedo[cell];
-			if (back < 1.0f) continue;
-			lit.bounceCells.push_back(world.through[cell] > 0.0f || from < 0 ? cell : from);
-			lit.bounce.push_back(back);
-		}
-		for (size_t k = 0; k < lit.cells.size(); k++) grid[lit.cells[k]] += lit.lux[k];
-		for (size_t k = 0; k < lit.bounceCells.size(); k++) bounceGrid[lit.bounceCells[k]] += lit.bounce[k];
-	}
-
-	static void Remove(const Lit& lit, std::vector<float>& grid, std::vector<float>& bounceGrid)
-	{
-		for (size_t k = 0; k < lit.cells.size(); k++) grid[lit.cells[k]] -= lit.lux[k];
-		for (size_t k = 0; k < lit.bounceCells.size(); k++) bounceGrid[lit.bounceCells[k]] -= lit.bounce[k];
-	}
-
-	static constexpr int Steps = 8; // how far the reflected light goes from where it was reflected, in cells
-
-	// The reflected light walks through the open cells, standing for the bounces after the first: each step a quarter to
-	// each neighbour, times what the cell lets through; the quarter that goes into a solid side comes back by that side's
-	// reflectance. So in a snow corridor light goes far and in an abyssalite one it dies within a few cells. The scattered
-	// light of a cell is the mean over the steps, so in an open room it is about the reflected light around it. Linear in
-	// the reflected light, so it can be redone for a part of the grid (the changed lights' area widened by Steps).
-	static void Scatter(const World& world, const std::vector<float>& bounce, std::vector<float>& scattered, std::vector<float>& a, std::vector<float>& b)
-	{
-		const int w = world.w, h = world.h;
-		a = bounce;
-		b.assign(bounce.size(), 0.0f);
-		scattered = bounce;
-		for (int step = 0; step < Steps; step++)
-		{
-			for (int y = 0; y < h; y++)
-			{
-				const float* row = &a[(size_t)y * w];
-				const float* up = y + 1 < h ? row + w : nullptr;
-				const float* down = y > 0 ? row - w : nullptr;
-				const float* through = &world.through[(size_t)y * w];
-				const float* walls = &world.walls[(size_t)y * w];
-				float* out = &b[(size_t)y * w];
-				float* sum = &scattered[(size_t)y * w];
-				for (int x = 0; x < w; x++)
-				{
-					const float t = through[x];
-					if (t <= 0.0f) { out[x] = 0.0f; continue; }
-					const float around = (x > 0 ? row[x - 1] : 0.0f) + (x + 1 < w ? row[x + 1] : 0.0f) + (up ? up[x] : 0.0f) + (down ? down[x] : 0.0f);
-					out[x] = t * (0.25f * around + walls[x] * row[x]);
-					sum[x] += out[x];
-				}
-			}
-			std::swap(a, b);
-		}
-		for (float& v : scattered) v *= 1.0f / (Steps + 1);
-	}
+	return { x, y, (float)lux, range, 0.5f, cone ? onilight::Cone : onilight::Circle, onilight::South, 0 };
 }
 
-// A scene for the pictures: four equal rooms under a ceiling light (C, 1800 lux, radius 8) with a floor lamp (L, 1000 lux,
-// radius 4) by a doorway that leads round a bend; a pillar; a pool. Sandstone (S), abyssalite (A), snow (W), each with a back
-// wall of the same; granite (G) with no back wall. ~ water, % polluted water.
+// A scene for the pictures: four equal rooms under a ceiling light (C, 1800 lux, radius 8, lighting the half below) with
+// a floor lamp (L, 1000 lux, radius 4) by a doorway that leads round a bend; a pillar; a pool. Sandstone (S), abyssalite
+// (A), snow (W), each with a back wall of the same; granite (G) with no back wall. ~ water, % polluted water.
 static const char* const Scene[] = {
 	"SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 	"SS..............C.............SSSSSSSSSSAA..............C.............AAAAAAAAAA",
@@ -365,60 +212,62 @@ static const char* const Scene[] = {
 	"WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
 };
 
-static float Reflectance(char m)
+static Element Material(char m)
 {
 	switch (m)
 	{
-	case 'S': return reflectance::SandStone;
-	case 'A': return reflectance::Katairite;
-	case 'W': return reflectance::Snow;
-	default: return reflectance::Granite;
+	case 'S': return SandStone;
+	case 'A': return Katairite;
+	case 'W': return Snow;
+	default: return Granite;
 	}
 }
 
-static void WriteScene(const std::string& out, const light::Tree& tree4, const light::Tree& tree8)
+static void WriteScene(const std::string& out)
 {
 	const int h = (int)(sizeof(Scene) / sizeof(Scene[0])), w = 80;
 	World world;
 	world.Init(w, h);
-	std::vector<Source> sources;
+	std::vector<game::Source> sources;
 	for (int row = 0; row < h; row++)
 		for (int x = 0; x < w; x++)
 		{
 			const char c = Scene[row][x];
 			const int y = h - 1 - row;
 			const char room = Scene[row < 14 ? 0 : 14][x < 40 ? 0 : 40];
-			const float back = room == 'G' ? 0.0f : Reflectance(room); // the granite room has no back wall
-			if (c == '~') world.Set(x, y, Liquid, Water, back);
-			else if (c == '%') world.Set(x, y, Liquid, PollutedWater, back);
-			else if (c == '.' || c == 'C' || c == 'L') world.Set(x, y, Gas, 1.0f, back);
-			else world.Set(x, y, Rock, 0.0f, Reflectance(c));
-			if (c == 'L') sources.push_back({ x, y, 1000, 4.0f });
-			if (c == 'C') sources.push_back({ x, y, 1800, 8.0f });
+			const uint16_t back = room == 'G' ? 0xFFFF : Material(room); // the granite room has no back wall
+			if (c == '~') world.Set(x, y, Water, back);
+			else if (c == '%') world.Set(x, y, PollutedWater, back);
+			else if (c == '.' || c == 'C' || c == 'L') world.Set(x, y, Oxygen, back);
+			else world.Set(x, y, Material(c));
+			if (c == 'L') sources.push_back({ x, y, 1000, 4, false });
+			if (c == 'C') sources.push_back({ x, y, 1800, 8, true });
 		}
-	world.Finish();
+	onilight::Engine engine;
+	engine.Init(w, h);
+	const std::vector<ElementOptics> elements = Elements();
+	engine.SetElements(elements.data(), (int)elements.size());
+	onilight::GridView view = world.View();
 	std::vector<int> g(w * h, 0);
-	std::vector<float> direct(w * h, 0.0f), bounce(w * h, 0.0f), reach;
-	for (const Source& s : sources)
+	for (size_t k = 0; k < sources.size(); k++)
 	{
 		game::Lit gl;
-		light::Lit nl;
-		game::Add(world, s, gl, g);
-		light::Add(world, s.range > 5 ? tree8 : tree4, s, nl, direct, bounce, reach);
+		game::Add(world, sources[k], gl, g);
+		const game::Source& s = sources[k];
+		engine.Add(view, (int)k, Desc(s.x, s.y, s.lux, (float)s.range, s.cone));
 	}
-	std::vector<float> scattered, a, b;
-	light::Scatter(world, bounce, scattered, a, b);
 	FILE* f = fopen((out + "/light_piece.txt").c_str(), "w");
 	fprintf(f, "%d %d\n", w, h);
 	for (int y = h - 1; y >= 0; y--)
 		for (int x = 0; x < w; x++)
 		{
 			const int c = y * w + x;
-			fprintf(f, "%d %c %d %.1f %.1f\n", (int)world.kind[c], Scene[h - 1 - y][x], g[c], direct[c], direct[c] + scattered[c]);
+			fprintf(f, "%d %c %d %.1f %.1f\n", Scene[h - 1 - y][x] == '~' || Scene[h - 1 - y][x] == '%' ? 2 : world.Opaque(x, y) ? 0 : 1,
+				Scene[h - 1 - y][x], g[c], engine.Direct(c), (float)world.lightCount[c]);
 		}
-	for (const Source& s : sources) fprintf(f, "source %d %d\n", s.x, h - 1 - s.y);
+	for (const game::Source& s : sources) fprintf(f, "source %d %d\n", s.x, h - 1 - s.y);
 	fclose(f);
-	// Mean light of each room (open cells), and of its far bend, for the report.
+	// Mean light of each room (open cells), and of the shaft up the bend, for the report.
 	for (int q = 0; q < 4; q++)
 	{
 		const int x0 = q % 2 * 40, row0 = q / 2 * 14;
@@ -428,13 +277,22 @@ static void WriteScene(const std::string& out, const light::Tree& tree4, const l
 			for (int x = x0 + 2; x < x0 + 37; x++)
 			{
 				const int c = (h - 1 - row) * w + x;
-				if (world.kind[c] == Rock) continue;
-				const bool inBend = x >= x0 + 34 && row <= row0 + 8;
-				if (inBend) { bendD += direct[c]; bendT += direct[c] + scattered[c]; bend++; continue; }
-				sumG += g[c]; sumD += direct[c]; sumT += direct[c] + scattered[c]; cells++;
+				if (world.Opaque(x, h - 1 - row)) continue;
+				if (x >= x0 + 34 && row <= row0 + 8) { bendD += engine.Direct(c); bendT += world.lightCount[c]; bend++; continue; }
+				sumG += g[c]; sumD += engine.Direct(c); sumT += world.lightCount[c]; cells++;
 			}
-		printf("room %c: mean lux  game %.0f, direct %.0f, with reflected %.0f;  up the bend  direct %.0f, with reflected %.0f\n",
+		printf("room %c: mean lux  game %.0f, direct %.0f, with reflected %.0f;  shaft up the bend  direct %.0f, with reflected %.1f\n",
 			Scene[row0][x0], sumG / cells, sumD / cells, sumT / cells, bendD / bend, bendT / bend);
+	}
+	// The corridor and the shaft, cell by cell (with reflected light): from the doorway right, then up.
+	for (int q = 0; q < 4; q++)
+	{
+		const int x0 = q % 2 * 40, row0 = q / 2 * 14;
+		printf("room %c corridor:", Scene[row0][x0]);
+		for (int x = x0 + 30; x <= x0 + 35; x++) printf(" %d", world.lightCount[(h - 1 - (row0 + 10)) * w + x]);
+		printf("  | up:");
+		for (int row = row0 + 9; row >= row0 + 2; row--) printf(" %d", world.lightCount[(h - 1 - row) * w + x0 + 35]);
+		printf("\n");
 	}
 }
 
@@ -446,37 +304,41 @@ static double Now()
 int main(int argc, char** argv)
 {
 	const std::string out = argc > 1 ? argv[1] : ".";
-	const World world = MakeBase(256, 384, 7);
+	World world;
+	MakeBase(world, 256, 384, 7);
 	std::vector<int> open;
-	for (int i = 0; i < world.w * world.h; i++) if (world.kind[i] == Gas) open.push_back(i);
-	const light::Tree tree4 = light::Build(4.0f), tree8 = light::Build(8.0f);
-	printf("grid %d x %d, open cells %zu; ray tree: radius 4 %zu offsets, radius 8 %zu offsets\n", world.w, world.h, open.size(), tree4.dx.size(), tree8.dx.size());
+	for (int i = 0; i < world.w * world.h; i++) if (world.element[i] == Oxygen) open.push_back(i);
+	const std::vector<ElementOptics> elements = Elements();
+	printf("grid %d x %d, open cells %zu\n", world.w, world.h, open.size());
+	onilight::GridView view = world.View();
 	for (int count : { 200, 1000, 5000 })
 	{
 		srand(11);
-		std::vector<Source> sources;
+		std::vector<game::Source> sources;
 		for (int k = 0; k < count; k++)
 		{
 			const int cell = open[rand() % open.size()];
-			const bool big = rand() % 2 == 0; // lamps (1000 lux, radius 4) and ceiling lights (1800 lux, radius 8)
-			sources.push_back({ cell % world.w, cell / world.w, big ? 1800 : 1000, big ? 8.0f : 4.0f });
+			const bool big = rand() % 2 == 0; // lamps (1000 lux, radius 4) and ceiling lights (1800 lux, radius 8, the half below)
+			sources.push_back({ cell % world.w, cell / world.w, big ? 1800 : 1000, big ? 8 : 4, big });
 		}
 		std::vector<int> gameGrid(world.w * world.h, 0);
 		std::vector<game::Lit> gameLit(count);
 		double t0 = Now();
 		for (int k = 0; k < count; k++) game::Add(world, sources[k], gameLit[k], gameGrid);
 		const double gameBuild = Now() - t0;
-		std::vector<float> newGrid(world.w * world.h, 0.0f), bounceGrid(world.w * world.h, 0.0f), reach;
-		std::vector<light::Lit> newLit(count);
+		onilight::Engine engine;
+		engine.Init(world.w, world.h);
+		engine.SetElements(elements.data(), (int)elements.size());
+		std::fill(world.lightCount.begin(), world.lightCount.end(), 0);
 		t0 = Now();
-		for (int k = 0; k < count; k++) light::Add(world, sources[k].range > 5 ? tree8 : tree4, sources[k], newLit[k], newGrid, bounceGrid, reach);
-		const double newBuild = Now() - t0;
+		for (int k = 0; k < count; k++) engine.Add(view, k, Desc(sources[k].x, sources[k].y, sources[k].lux, (float)sources[k].range, sources[k].cone));
+		const double newAdd = Now() - t0;
 		// Updating one light (remove and add again), as when a light bug moves or a wall is built next to a lamp.
 		const int updates = 2000;
 		t0 = Now();
 		for (int u = 0; u < updates; u++)
 		{
-			const int k = u % count;
+			const int k = u * 7919 % count;
 			game::Remove(gameLit[k], gameGrid);
 			game::Add(world, sources[k], gameLit[k], gameGrid);
 		}
@@ -484,46 +346,58 @@ int main(int argc, char** argv)
 		t0 = Now();
 		for (int u = 0; u < updates; u++)
 		{
-			const int k = u % count;
-			light::Remove(newLit[k], newGrid, bounceGrid);
-			light::Add(world, sources[k].range > 5 ? tree8 : tree4, sources[k], newLit[k], newGrid, bounceGrid, reach);
+			const int k = u * 7919 % count;
+			engine.Remove(view, k, false);
+			engine.Add(view, k, Desc(sources[k].x, sources[k].y, sources[k].lux, (float)sources[k].range, sources[k].cone));
 		}
 		const double newUpdate = (Now() - t0) / updates * 1000.0;
-		std::vector<float> scattered, a, b;
+		// A change of brightness alone (a light bug dimming): taken out with keep and put back rescaled.
 		t0 = Now();
-		light::Scatter(world, bounceGrid, scattered, a, b);
-		const double scatter = Now() - t0;
-		size_t gameCells = 0, newCells = 0;
-		for (auto& l : gameLit) gameCells += l.cells.size();
-		for (auto& l : newLit) newCells += l.cells.size() + l.bounceCells.size();
-		printf("%d lights: build all  game %.2f ms, new %.2f ms;  update one  game %.1f us, new %.1f us;  scattered light over the whole grid %.2f ms;  "
-			"memory for the lights  game %.1f MB, new %.1f MB\n",
-			count, gameBuild, newBuild, gameUpdate, newUpdate, scatter, gameCells * 8.0 / 1e6, newCells * 8.0 / 1e6);
+		for (int u = 0; u < updates; u++)
+		{
+			const int k = u * 7919 % count;
+			engine.Remove(view, k, true);
+			engine.Add(view, k, Desc(sources[k].x, sources[k].y, sources[k].lux - (u & 1), (float)sources[k].range, sources[k].cone));
+		}
+		const double newDim = (Now() - t0) / updates * 1000.0;
+		t0 = Now();
+		for (int u = 0; u < updates; u++)
+		{
+			const int k = u * 7919 % count;
+			engine.Remove(view, k, true);
+			engine.Add(view, k, Desc(sources[k].x, sources[k].y, sources[k].lux, (float)sources[k].range, sources[k].cone));
+		}
+		float check[4];
+		engine.Check(view, check);
+		const onilight::Counters& st = engine.Stats();
+		printf("%d lights: build all  game %.2f ms, new %.2f ms;  update one  game %.1f us, new %.1f us, brightness only %.2f us;  "
+			"vs computing again: direct %.4f, light grid %.0f lux, vs all reflected light at once %.0f lux;  transport %.0f cell-steps per trace\n",
+			count, gameBuild, newAdd, gameUpdate, newUpdate, newDim, check[0], check[1], check[2], (double)st.transportCells / st.traces);
 	}
-	// Cost of one light by its radius: the game's light grows with the lit area, the new one with the area to 1.5 R.
+	// Cost of one light by its radius.
 	for (float range : { 4.0f, 8.0f, 16.0f })
 	{
-		const light::Tree tree = light::Build(range);
+		onilight::Engine engine;
+		engine.Init(world.w, world.h);
+		engine.SetElements(elements.data(), (int)elements.size());
 		srand(13);
 		std::vector<int> gameGrid(world.w * world.h, 0);
-		std::vector<float> newGrid(world.w * world.h, 0.0f), bounceGrid(world.w * world.h, 0.0f), reach;
 		game::Lit gl;
-		light::Lit nl;
 		const int count = 2000;
 		double gameTime = 0, newTime = 0;
 		for (int k = 0; k < count; k++)
 		{
 			const int cell = open[rand() % open.size()];
-			const Source s{ cell % world.w, cell / world.w, 1800, range };
+			const game::Source s{ cell % world.w, cell / world.w, 1800, (int)range, false };
 			double t0 = Now();
 			game::Add(world, s, gl, gameGrid);
 			gameTime += Now() - t0;
 			t0 = Now();
-			light::Add(world, tree, s, nl, newGrid, bounceGrid, reach);
+			engine.Add(view, 0, Desc(s.x, s.y, s.lux, range, false));
 			newTime += Now() - t0;
 		}
-		printf("radius %.0f: one light  game %.1f us, new %.1f us (ray tree %zu offsets)\n", range, gameTime / count * 1000.0, newTime / count * 1000.0, tree.dx.size());
+		printf("radius %.0f: one light  game %.1f us, new %.1f us\n", range, gameTime / count * 1000.0, newTime / count * 1000.0);
 	}
-	WriteScene(out, tree4, tree8);
+	WriteScene(out);
 	return 0;
 }
