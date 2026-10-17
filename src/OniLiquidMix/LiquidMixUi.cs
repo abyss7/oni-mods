@@ -33,7 +33,6 @@ namespace OniLiquidMix
 		private const float MinShare = 0.005f;       // a share below 0.5% by mass goes into the "Other" line
 		private const float FloorBrightness = 0.15f; // brightness of the smallest shown share
 		private const int Header = 8;                // header of the field query: eight ints
-		private static readonly float[] LegendLevels = { 1f, 0.5f }; // plus traces: the colour itself is smooth
 		private static readonly Color Empty = new Color(0.06f, 0.07f, 0.09f, 1f);
 
 		private static int selected = -1;
@@ -369,13 +368,12 @@ namespace OniLiquidMix
 			{
 				return entries;
 			}
+			// Samples of the smooth scale, named by how much of the cell the liquid makes up.
 			string name = Name(ElementLoader.elements[selected]);
-			foreach (float level in LegendLevels)
-			{
-				string percent = Mathf.RoundToInt(level * 100f) + (string)STRINGS.UI.UNITSUFFIXES.PERCENT;
-				entries.Add(new LegendEntry(level == 1f ? percent + " " + name : percent, null, Shade(FloorBrightness + (1f - FloorBrightness) * level)));
-			}
-			entries.Add(new LegendEntry("<1" + (string)STRINGS.UI.UNITSUFFIXES.PERCENT, null, Shade(FloorBrightness)));
+			entries.Add(new LegendEntry(ONILIQUIDMIX.MIXTURES.PURE, string.Format(ONILIQUIDMIX.MIXTURES.PURE_TOOLTIP, name), Shade(1f)));
+			entries.Add(new LegendEntry(ONILIQUIDMIX.MIXTURES.HALF, string.Format(ONILIQUIDMIX.MIXTURES.HALF_TOOLTIP, name), Shade(FloorBrightness + (1f - FloorBrightness) * 0.5f)));
+			entries.Add(new LegendEntry(ONILIQUIDMIX.MIXTURES.TRACES, string.Format(ONILIQUIDMIX.MIXTURES.TRACES_TOOLTIP, name), Shade(FloorBrightness)));
+			entries.Add(new LegendEntry(ONILIQUIDMIX.MIXTURES.ABSENT, string.Format(ONILIQUIDMIX.MIXTURES.ABSENT_TOOLTIP, name), Empty));
 			return entries;
 		}
 

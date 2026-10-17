@@ -16,6 +16,15 @@ namespace OniGasMix
 			public static LocString OVERLAY_TOOLTIP = "Displays the composition of mixtures of gases and liquids";
 			/// <summary>Title of the gas group in the overlay list.</summary>
 			public static LocString GROUP_TITLE = "Gases";
+			// Legend of a selected gas: how much of the cell it makes up (by molecules, like the tooltip's percentages).
+			public static LocString PURE = "Pure";
+			public static LocString PURE_TOOLTIP = "The whole cell is {0}";
+			public static LocString HALF = "Half the Mixture";
+			public static LocString HALF_TOOLTIP = "{0} makes up half of the cell's gas molecules";
+			public static LocString TRACES = "Traces";
+			public static LocString TRACES_TOOLTIP = "A noticeable trace of {0}: less than 1% of the mixture";
+			public static LocString ABSENT = "Absent";
+			public static LocString ABSENT_TOOLTIP = "No {0} in this cell";
 		}
 
 		/// <summary>Gas sensor window: the threshold slider (GasSensorThreshold.cs).</summary>

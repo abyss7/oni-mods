@@ -48,7 +48,6 @@ namespace OniGasMix
 		private const float FadeBelow = 0.1f;
 		private const float TraceShare = 0.0005f;  // a smaller share of gas is not shown in the picture
 		private const float FloorBrightness = 0.15f; // brightness of the smallest shown share
-		private static readonly float[] LegendLevels = { 1f, 0.5f }; // plus traces: the colour itself is smooth
 		private static readonly Color Empty = new Color(0.06f, 0.07f, 0.09f, 1f); // a cell without the selected gas
 
 		private static float[] field;         // request header; mass of the selected gas and number of moles of all gases per cell
@@ -317,13 +316,12 @@ namespace OniGasMix
 			{
 				return entries;
 			}
+			// Samples of the smooth scale, named by how much of the cell the gas makes up.
 			string name = STRINGS.UI.StripLinkFormatting(ElementLoader.elements[selected].name);
-			foreach (float level in LegendLevels)
-			{
-				string percent = Mathf.RoundToInt(level * 100f) + (string)STRINGS.UI.UNITSUFFIXES.PERCENT;
-				entries.Add(new LegendEntry(level == 1f ? percent + " " + name : percent, null, Shade(Brightness(level))));
-			}
-			entries.Add(new LegendEntry("<1" + (string)STRINGS.UI.UNITSUFFIXES.PERCENT, null, Shade(Brightness(0f))));
+			entries.Add(new LegendEntry(ONIGASMIX.GASMIXTURE.PURE, string.Format(ONIGASMIX.GASMIXTURE.PURE_TOOLTIP, name), Shade(Brightness(1f))));
+			entries.Add(new LegendEntry(ONIGASMIX.GASMIXTURE.HALF, string.Format(ONIGASMIX.GASMIXTURE.HALF_TOOLTIP, name), Shade(Brightness(0.5f))));
+			entries.Add(new LegendEntry(ONIGASMIX.GASMIXTURE.TRACES, string.Format(ONIGASMIX.GASMIXTURE.TRACES_TOOLTIP, name), Shade(Brightness(0f))));
+			entries.Add(new LegendEntry(ONIGASMIX.GASMIXTURE.ABSENT, string.Format(ONIGASMIX.GASMIXTURE.ABSENT_TOOLTIP, name), Empty));
 			return entries;
 		}
 
