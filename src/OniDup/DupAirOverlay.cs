@@ -9,9 +9,9 @@ using UnityEngine;
 namespace OniDup
 {
 	/// <summary>
-	/// "Breathing Conditions" view in the oxygen overlay (shared mixtures interface, src/Common/MixtureUi.cs): right under the game's
-	/// "Breathable", it colours the air by the zones of DupAir: Oxygen on the game's colour scale, from the best green at a
-	/// normal pressure down through thin air, lightheaded and gasping for air to unbreathable red; a vacuum where body fluids
+	/// "Breathing Conditions": the oxygen overlay's view in place of the game's breathable one, with its own legend (shared
+	/// mixtures interface, src/Common/MixtureUi.cs). It colours the air by the zones of DupAir: Oxygen on the game's colour
+	/// scale, from the best at a normal pressure down through thin air, lightheaded and gasping for air to unbreathable red; a vacuum where body fluids
 	/// boil in deep blue; too much Oxygen in yellow and orange; Carbon Dioxide on its own purple scale, from stuffy air to a
 	/// blackout, wherever it harms at least as much as the Oxygen there.
 	/// Each cell is shown by its own air (as if a Duplicant without a mask breathed it).
@@ -30,6 +30,9 @@ namespace OniDup
 				["id"] = "breathing",
 				["order"] = -100,
 				["flat"] = true,
+				// Replaces the game's breathable view: the same question answered in more detail (pressure of Oxygen in the
+				// lungs, Carbon Dioxide, vacuum, too much Oxygen).
+				["replace"] = true,
 				["title"] = (Func<string>)(() => ONIDUP.OVERLAY.NAME),
 				["choices"] = (Func<List<string[]>>)(() => new List<string[]> { new[] { Key, (string)ONIDUP.OVERLAY.NAME, (string)ONIDUP.OVERLAY.TOOLTIP } }),
 				["current"] = (Func<string>)(() => current),
@@ -47,8 +50,8 @@ namespace OniDup
 		}
 
 		// ---------- Self-check: the file verify_dup_overlay.txt in the mod folder ----------
-		// A while after loading, the overlays are opened over the colony and pictured: the oxygen overlay in its normal view
-		// and in this one, then the mixtures overlay as it opens (the first gas selected) and with the liquids group opened.
+		// A while after loading, the overlays are opened over the colony and pictured: the oxygen overlay (this view replaces
+		// its normal one), then the mixtures overlay as it opens (the first gas selected) and with the liquids group opened.
 
 		private static int verifyFrame = -1;
 		private static float verifyStart = -1f;
@@ -84,19 +87,10 @@ namespace OniDup
 				}
 				else if (frame == 30)
 				{
-					Picture("breathable");
+					Picture("breathing");
 				}
 				else if (frame == 31)
 				{
-					Click(Key);
-				}
-				else if (frame == 60)
-				{
-					Picture("breathing");
-				}
-				else if (frame == 61)
-				{
-					Click(MixtureUi.BaseKey);
 					OverlayScreen.Instance.ToggleOverlay(MixtureUi.MixturesId, allowSound: false);
 				}
 				else if (frame == 90)

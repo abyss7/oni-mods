@@ -35,6 +35,8 @@ namespace OniCommon
 	///   "flat"     bool                            optional: true puts the provider's choices into the oxygen overlay, right under
 	///                                              its normal view (a view of the whole air rather than a group of substances);
 	///                                              the other providers are groups of the mixtures overlay;
+	///   "replace"  bool                            optional, with "flat": the provider's first choice replaces the oxygen overlay's
+	///                                              normal view altogether: no selection list, its own legend only;
 	///   "overlayName", "overlayButton", "overlayTooltip" Func&lt;string&gt;: the mixtures overlay's names (the same in meaning for
 	///              all providers, taken from the first one).
 	/// </summary>
@@ -464,7 +466,10 @@ namespace OniCommon
 					}
 				}
 				bool mixtures = IsMixtures(__instance);
-				ToolParameterMenu.ToggleData[] toggles = mixtures ? MixturesToggles() : OxygenToggles();
+				// A view that replaces the oxygen overlay's normal one: always on, no list; the legend is still built from code
+				// (its own rows, without the game's).
+				Dictionary<string, object> replacing = mixtures ? null : Replacing();
+				ToolParameterMenu.ToggleData[] toggles = replacing != null ? new ToolParameterMenu.ToggleData[0] : mixtures ? MixturesToggles() : OxygenToggles();
 				__instance.legendFilters = toggles.Length > (mixtures ? 0 : 1) ? toggles : null;
 				// The legend builds a selection list only for overlays marked as "filled from code" (like the temperature one).
 				List<OverlayLegend.OverlayInfo> infos = OverlayLegend.Instance?.overlayInfoList;
@@ -481,7 +486,11 @@ namespace OniCommon
 				}
 				if (info != null)
 				{
-					info.isProgrammaticallyPopulated = __instance.legendFilters != null;
+					info.isProgrammaticallyPopulated = __instance.legendFilters != null || replacing != null;
+					if (replacing != null)
+					{
+						info.name = (Text(replacing, "title") ?? info.name).ToUpper();
+					}
 					if (mixtures)
 					{
 						info.name = providers.Select(provider => Text(provider, "overlayName")).FirstOrDefault(name => name != null) ?? "MIXTURES OVERLAY";
@@ -500,6 +509,32 @@ namespace OniCommon
 		private const string HeadingPrefix = "ONIMIXTUREGROUP";
 		private static string expanded; // id of the group whose list is open in the mixtures overlay; one at a time
 		private static readonly Dictionary<string, string> groupOfHeading = new Dictionary<string, string>();
+
+		/// <summary>
+		/// The view of the whole air that replaces the oxygen overlay's normal one ("replace"), selected; null if there is none.
+		/// </summary>
+		private static Dictionary<string, object> Replacing()
+		{
+			foreach (Dictionary<string, object> provider in providers.FindAll(IsFlat))
+			{
+				if (!(provider.TryGetValue("replace", out object replace) && replace is bool on && on))
+				{
+					continue;
+				}
+				List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
+				if (choices == null || choices.Count == 0)
+				{
+					continue;
+				}
+				if (Get<Func<string>>(provider, "current")?.Invoke() != choices[0][0])
+				{
+					Get<Action<string>>(provider, "select")?.Invoke(choices[0][0]);
+				}
+				active = provider;
+				return provider;
+			}
+			return null;
+		}
 
 		/// <summary>Oxygen overlay: the normal "Breathable" view, then the views of the whole air.</summary>
 		private static ToolParameterMenu.ToggleData[] OxygenToggles()
