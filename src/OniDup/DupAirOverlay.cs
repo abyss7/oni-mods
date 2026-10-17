@@ -206,16 +206,18 @@ namespace OniDup
 			{
 				return;
 			}
-			Band band = Classify(cell, out Color colour);
+			Band band = Classify(cell, out Color _);
 			string name = BandName(band);
+			// The colour of the band's row in the legend (for the Oxygen steps the middle of the step), not of the exact point
+			// on the map's scale: the note and the legend match.
+			Color colour = BandColour(band);
 			if (name == null)
 			{
 				return;
 			}
-			if (band != lastBand || colour != lastColour)
+			if (band != lastBand)
 			{
 				lastBand = band;
-				lastColour = colour;
 				// The deep colours (vacuum, the last steps of Carbon Dioxide) are lightened more, keeping the order of the steps.
 				float lighten = band == Band.Vacuum ? 0.45f : band == Band.Blackout ? 0.35f : band == Band.Poisoning ? 0.2f : 0.1f;
 				Color text = Color.Lerp(colour, Color.white, lighten);
@@ -224,8 +226,25 @@ namespace OniDup
 			__result[3] = lastNote;
 		}
 
+		/// <summary>The colour of a band's row in the legend.</summary>
+		private static Color BandColour(Band band)
+		{
+			switch (band)
+			{
+				case Band.Toxic: return ToxicColour;
+				case Band.Rich: return RichColour;
+				case Band.Normal: return Scale(DupAir.Normal);
+				case Band.Thin: return Scale((DupAir.Normal + DupAir.Thin) / 2f);
+				case Band.Lightheaded: return Scale((DupAir.Thin + DupAir.Hypoxic) / 2f);
+				case Band.Gasping: return Scale((DupAir.Hypoxic + DupAir.Severe) / 2f);
+				case Band.Unbreathable: return SimDebugView.Instance.unbreathableColour;
+				case Band.Vacuum: return VacuumColour;
+				case Band.Stuffy: case Band.Headache: case Band.Poisoning: case Band.Blackout: return CarbonColours[band - Band.Stuffy];
+				default: return Color.white;
+			}
+		}
+
 		private static Band lastBand = Band.None;
-		private static Color lastColour;
 		private static string lastNote = "";
 
 		private static string BandName(Band band)
@@ -281,10 +300,10 @@ namespace OniDup
 			{
 				new LegendEntry(ONIDUP.OVERLAY.TOXIC, ONIDUP.OVERLAY.TOXIC_TOOLTIP, ToxicColour),
 				new LegendEntry(ONIDUP.OVERLAY.RICH, ONIDUP.OVERLAY.RICH_TOOLTIP, RichColour),
-				new LegendEntry(ONIDUP.OVERLAY.NORMAL, ONIDUP.OVERLAY.NORMAL_TOOLTIP, Scale(DupAir.Normal)),
-				new LegendEntry(ONIDUP.OVERLAY.THIN, ONIDUP.OVERLAY.THIN_TOOLTIP, Scale((DupAir.Normal + DupAir.Thin) / 2f)),
-				new LegendEntry(ONIDUP.OVERLAY.LIGHTHEADED, ONIDUP.OVERLAY.LIGHTHEADED_TOOLTIP, Scale((DupAir.Thin + DupAir.Hypoxic) / 2f)),
-				new LegendEntry(ONIDUP.OVERLAY.GASPING, ONIDUP.OVERLAY.GASPING_TOOLTIP, Scale((DupAir.Hypoxic + DupAir.Severe) / 2f)),
+				new LegendEntry(ONIDUP.OVERLAY.NORMAL, ONIDUP.OVERLAY.NORMAL_TOOLTIP, BandColour(Band.Normal)),
+				new LegendEntry(ONIDUP.OVERLAY.THIN, ONIDUP.OVERLAY.THIN_TOOLTIP, BandColour(Band.Thin)),
+				new LegendEntry(ONIDUP.OVERLAY.LIGHTHEADED, ONIDUP.OVERLAY.LIGHTHEADED_TOOLTIP, BandColour(Band.Lightheaded)),
+				new LegendEntry(ONIDUP.OVERLAY.GASPING, ONIDUP.OVERLAY.GASPING_TOOLTIP, BandColour(Band.Gasping)),
 				new LegendEntry(ONIDUP.OVERLAY.UNBREATHABLE, ONIDUP.OVERLAY.UNBREATHABLE_TOOLTIP, SimDebugView.Instance.unbreathableColour),
 				new LegendEntry(ONIDUP.OVERLAY.VACUUM, ONIDUP.OVERLAY.VACUUM_TOOLTIP, VacuumColour),
 				new LegendEntry(ONIDUP.OVERLAY.STUFFY, ONIDUP.OVERLAY.STUFFY_TOOLTIP, CarbonColours[0]),
