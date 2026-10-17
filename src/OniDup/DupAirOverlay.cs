@@ -74,6 +74,11 @@ namespace OniDup
 				// A picture is taken at the end of its frame: whatever is switched after it waits for the next frame.
 				if (frame == 0)
 				{
+					// The "mod differences" dialog of a test run darkens the whole screen: it is closed for the pictures.
+					foreach (ConfirmDialogScreen dialog in UnityEngine.Object.FindObjectsOfType<ConfirmDialogScreen>())
+					{
+						dialog.Deactivate();
+					}
 					CameraController.Instance.SnapTo(ColonyCentre(), 14f);
 					OverlayScreen.Instance.ToggleOverlay(OverlayModes.Oxygen.ID, allowSound: false);
 				}
@@ -136,6 +141,17 @@ namespace OniDup
 
 		private static void Picture(string name)
 		{
+			if (name == "breathing")
+			{
+				// The real colours of the game's breathable scale, for choosing the colours of this view.
+				var samples = new System.Text.StringBuilder();
+				foreach (float level in new[] { 0f, 0.25f, 0.5f, 0.75f, 1f })
+				{
+					Color colour = SimDebugView.Instance.breathableGradient.Evaluate(level);
+					samples.Append($" {level:F2}: {colour.r:F2} {colour.g:F2} {colour.b:F2};");
+				}
+				Debug.Log($"{ModContext.Tag} overlay verify: the game's breathable scale{samples}, unbreathable {SimDebugView.Instance.unbreathableColour}");
+			}
 			string file = Path.Combine(ModContext.Folder, $"verify_dup_overlay_{name}.png");
 			ScreenCapture.CaptureScreenshot(file);
 			object menu = Traverse.Create(OverlayLegend.Instance).Field("filterMenu").GetValue();
