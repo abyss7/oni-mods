@@ -28,7 +28,6 @@ namespace OniCommon
 	///   "choices"  Func&lt;List&lt;string[]&gt;&gt;             what can be chosen in the overlay: {key, label, tooltip} and
 	///                                              optionally the amount in the world (kg, invariant culture): the list is
 	///                                              ordered by it, the largest first, otherwise by label;
-	///   "textColour" string                        optional: colour of the group's labels in the mixtures overlay (hex RRGGBB);
 	///   "current"  Func&lt;string&gt;                     the selected key of this group or null;
 	///   "select"   Action&lt;string&gt;                   selection of a key of this group (null: the normal view or another group is selected);
 	///   "refresh"  System.Action                         before the overlay is redrawn, while a key of this group is selected;
@@ -581,8 +580,8 @@ namespace OniCommon
 		}
 
 		/// <summary>
-		/// Mixtures overlay: the groups of substances. A group shows only its title, "+ GASES", until it is clicked; then its
-		/// substances open under it ("– GASES") and the other group closes. The group with the current selection is open. With no
+		/// Mixtures overlay: the groups of substances. A group shows only its title with the game's expand arrow until it is
+		/// clicked; then its substances open under it and the other group closes. The group with the current selection is open. With no
 		/// selection the first substance of the first group is selected: the overlay always shows something.
 		/// </summary>
 		/// <param name="followSelection">the overlay is being opened: the group with the selection opens; otherwise the
@@ -606,17 +605,9 @@ namespace OniCommon
 				}
 			}
 			Dictionary<string, object> stillActive = null;
-			// With few substances all groups are open in one list (their titles only name them); with many, a group opens
-			// on a click on its title.
-			var lists = new Dictionary<Dictionary<string, object>, List<string[]>>();
 			foreach (Dictionary<string, object> provider in groups)
 			{
-				lists[provider] = Get<Func<List<string[]>>>(provider, "choices")?.Invoke() ?? new List<string[]>();
-			}
-			collapsible = lists.Values.Sum(list => list.Count) > OneListUpTo;
-			foreach (Dictionary<string, object> provider in groups)
-			{
-				List<string[]> choices = lists[provider];
+				List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke() ?? new List<string[]>();
 				if (choices.Count == 0)
 				{
 					continue;
@@ -627,20 +618,19 @@ namespace OniCommon
 				{
 					expanded = id;
 				}
-				bool open = !collapsible || expanded == id;
+				bool open = expanded == id;
 				string heading = HeadingPrefix + id.ToUpperInvariant();
 				groupOfHeading[heading] = id;
-				// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals, in
-				// the group's colour; its switch is hidden (DecorateMenu).
+				openGroups[heading] = open;
+				// The title's switch shows the game's expand arrow instead of a box (DecorateMenu).
 				string title = Text(provider, "title") ?? id;
-				string colour = provider.TryGetValue("textColour", out object hex) ? hex as string : null;
-				AddString(heading, Coloured((collapsible ? (open ? "– " : "+ ") : "") + title.ToUpper(), colour, 0.25f), title);
-				toggles.Add(new ToolParameterMenu.ToggleData(heading, collapsible ? ToolParameterMenu.ToggleState.Off : ToolParameterMenu.ToggleState.Disabled));
+				AddString(heading, title, title);
+				toggles.Add(new ToolParameterMenu.ToggleData(heading, ToolParameterMenu.ToggleState.Off));
 				Order(choices);
 				bool found = false;
 				foreach (string[] choice in choices)
 				{
-					AddString(choice[0], Coloured(choice[1], colour, 0f), choice[2]);
+					AddString(choice[0], choice[1], choice[2]);
 					bool on = choice[0] == current;
 					found = found || on;
 					if (open)
@@ -661,8 +651,7 @@ namespace OniCommon
 			return toggles.ToArray();
 		}
 
-		private const int OneListUpTo = 16;
-		private static bool collapsible;
+		private static readonly Dictionary<string, bool> openGroups = new Dictionary<string, bool>();
 
 		/// <summary>By the amount in the world, the largest first, if the provider gives it; otherwise by label.</summary>
 		private static void Order(List<string[]> choices)
@@ -682,19 +671,9 @@ namespace OniCommon
 			return double.TryParse(choice[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double amount) ? amount : 0;
 		}
 
-		/// <summary>A label in a colour (hex RRGGBB), lightened towards white by the given share; as is without a colour.</summary>
-		private static string Coloured(string text, string hex, float lighten)
-		{
-			if (string.IsNullOrEmpty(hex) || !ColorUtility.TryParseHtmlString("#" + hex, out Color colour))
-			{
-				return text;
-			}
-			return $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(colour, Color.white, lighten))}>{text}</color>";
-		}
-
 		/// <summary>
-		/// After the game fills the mixtures overlay's list: the group titles lose their switch (an empty box that cannot be
-		/// pressed looks untidy); with collapsible groups the title text itself takes the click.
+		/// After the game fills the mixtures overlay's list: a group title's switch shows the game's expand arrow (pointing right
+		/// for a closed group, down for an open one) instead of a box, and the title text takes the click too.
 		/// </summary>
 		private static void DecorateMenu(ToolParameterMenu __instance)
 		{
@@ -717,12 +696,34 @@ namespace OniCommon
 					{
 						continue;
 					}
-					foreach (UnityEngine.UI.Image image in toggle.GetComponentsInChildren<UnityEngine.UI.Image>())
+					Sprite arrow = GameSprite(openGroups.TryGetValue(pair.Key, out bool open) && open ? "stresspanel_icon_expand_arrow" : "stresspanel_icon_expand_arrow_right");
+					foreach (Image image in toggle.GetComponentsInChildren<Image>())
 					{
-						image.enabled = false;
+						if (image == toggle.toggle_image && arrow != null)
+						{
+							image.sprite = arrow;
+							image.color = Color.white;
+							image.preserveAspect = true;
+						}
+						else
+						{
+							image.enabled = false;
+						}
+					}
+					// The switch must not redraw itself as a box when its state changes before the list is rebuilt: every
+					// state shows the arrow.
+					if (arrow != null && toggle.states != null)
+					{
+						ToggleState[] states = (ToggleState[])toggle.states.Clone();
+						for (int i = 0; i < states.Length; i++)
+						{
+							states[i].sprite = arrow;
+							states[i].color = Color.white;
+						}
+						toggle.states = states;
 					}
 					LocText label = row.GetComponentInChildren<LocText>();
-					if (collapsible && label != null)
+					if (label != null)
 					{
 						label.raycastTarget = true;
 						HeadingClick click = label.gameObject.GetComponent<HeadingClick>() ?? label.gameObject.AddComponent<HeadingClick>();
@@ -734,6 +735,31 @@ namespace OniCommon
 			{
 				Debug.LogWarning($"{ModContext.Tag} mixture interface: the group titles could not be styled: {e.Message}");
 			}
+		}
+
+		private static readonly Dictionary<string, Sprite> sprites = new Dictionary<string, Sprite>();
+
+		/// <summary>A sprite of the game by name: from its sprite table, or among the loaded ones (the expand arrows are not in the table).</summary>
+		private static Sprite GameSprite(string name)
+		{
+			if (sprites.TryGetValue(name, out Sprite found))
+			{
+				return found;
+			}
+			found = Assets.Sprites.TryGetValue(name, out Sprite listed) ? listed : null;
+			if (found == null)
+			{
+				foreach (Sprite sprite in Resources.FindObjectsOfTypeAll<Sprite>())
+				{
+					if (sprite.name == name)
+					{
+						found = sprite;
+						break;
+					}
+				}
+			}
+			sprites[name] = found;
+			return found;
 		}
 
 		/// <summary>

@@ -105,7 +105,6 @@ namespace OniGasMix
 				["hover"] = (Func<int, List<string>>)GasLayerHover.HoverLinesFor,
 				["panel"] = (Func<int, string>)GasLayerHover.PanelText,
 				["choices"] = (Func<List<string[]>>)Choices,
-				["textColour"] = "9FDCEB", // gases: light blue
 				["current"] = (Func<string>)(() => selected >= 0 && !failed && selected < ElementLoader.elements.Count ? KeyOf(ElementLoader.elements[selected]) : null),
 				["select"] = (Action<string>)(key => Select(key != null && gasByKey.TryGetValue(key, out int index) ? index : -1)),
 				["refresh"] = (System.Action)(() => Refresh(wait: false)),

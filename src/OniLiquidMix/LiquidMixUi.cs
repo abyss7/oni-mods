@@ -70,7 +70,6 @@ namespace OniLiquidMix
 				["hover"] = (Func<int, List<string>>)HoverLinesFor,
 				["panel"] = (Func<int, string>)PanelText,
 				["choices"] = (Func<List<string[]>>)Choices,
-				["textColour"] = "7FA6F5", // liquids: a deeper blue
 				["current"] = (Func<string>)(() => selected >= 0 && !failed && selected < ElementLoader.elements.Count ? KeyOf(ElementLoader.elements[selected]) : null),
 				["select"] = (Action<string>)(key => Select(key != null && liquidByKey.TryGetValue(key, out int index) ? index : -1)),
 				["refresh"] = (System.Action)(() => Refresh(wait: false)),
