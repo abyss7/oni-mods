@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace OniCommon
 {
@@ -263,6 +264,8 @@ namespace OniCommon
 				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(SelectionFilter)));
 			harmony.Patch(AccessTools.Method(typeof(ToolParameterMenu), nameof(ToolParameterMenu.PopulateMenu)),
 				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(DecorateMenu)));
+			harmony.Patch(AccessTools.Method(typeof(OverlayLegend), "ConfigureUIHeight"),
+				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(TallerLegend)));
 		}
 
 		private static void RegisterMixtures(OverlayScreen __instance)
@@ -731,6 +734,30 @@ namespace OniCommon
 			{
 				Debug.LogWarning($"{ModContext.Tag} mixture interface: the group titles could not be styled: {e.Message}");
 			}
+		}
+
+		/// <summary>
+		/// The legend panel is no taller than 512 units, and with the list of substances the share samples under it went out of
+		/// sight. In the mixtures overlay the panel may take up to 70% of the screen height before it scrolls.
+		/// </summary>
+		private static void TallerLegend(OverlayLegend __instance)
+		{
+			if (!IsMixtures(__instance.currentMode) || __instance.scrollRectLayout == null)
+			{
+				return;
+			}
+			LayoutElement layout = __instance.scrollRectLayout;
+			VerticalLayoutGroup group = layout.GetComponent<VerticalLayoutGroup>();
+			layout.enabled = false;
+			group.enabled = true;
+			LayoutRebuilder.ForceRebuildLayoutImmediate(__instance.rectTransform());
+			float content = layout.rectTransform().sizeDelta.y;
+			Canvas canvas = __instance.GetComponentInParent<Canvas>();
+			float screen = canvas != null ? canvas.rootCanvas.GetComponent<RectTransform>().rect.height : 0f;
+			layout.preferredHeight = Mathf.Min(content, Mathf.Max(512f, 0.7f * screen));
+			group.enabled = false;
+			layout.enabled = true;
+			LayoutRebuilder.ForceRebuildLayoutImmediate(__instance.rectTransform());
 		}
 
 		/// <summary>A click on a group title's text works as a click on its (hidden) switch.</summary>
