@@ -9,7 +9,7 @@
 #include "oni_light.h"
 
 // Changes on any edit of the structures and signatures: C# compares the number and leaves the game's light alone on a mismatch.
-#define ONI_LIGHT_ABI 1
+#define ONI_LIGHT_ABI 2
 
 #define ONI_STRINGIFY2(x) #x
 #define ONI_STRINGIFY(x) ONI_STRINGIFY2(x)
@@ -55,6 +55,12 @@ ONI_EXPORT void oni_light_remove(const onilight::GridView* grid, int32_t id, int
 	engine.Remove(*grid, id, keep != 0);
 }
 
+// Whether there is liquid in a source's area (its light changes as the liquid moves, with no event from the game).
+ONI_EXPORT int32_t oni_light_wet(int32_t id)
+{
+	return engine.Wet(id) ? 1 : 0;
+}
+
 // Drops what is kept for a source taken out with keep.
 ONI_EXPORT void oni_light_free(int32_t id)
 {
@@ -80,7 +86,7 @@ ONI_EXPORT void oni_light_cell(int32_t cell, float* out)
 	out[2] = engine.Through(cell);
 }
 
-// Self-check against the grid as it is now, over a rectangle of cells (inclusive): see Engine::Check. out: 4 numbers.
+// Self-check against the grid as it is now, over a rectangle of cells (inclusive): see Engine::Check. out: 6 numbers.
 ONI_EXPORT void oni_light_check(const onilight::GridView* grid, int32_t x0, int32_t y0, int32_t x1, int32_t y1, float* out)
 {
 	engine.Check(*grid, { x0, y0, x1, y1 }, out);

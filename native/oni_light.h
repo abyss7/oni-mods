@@ -164,6 +164,7 @@ namespace onilight
 		SourceDesc desc{};
 		float traced = 0.0f; // the brightness its light was traced with (the entries are for it)
 		float scale = 1.0f;  // the share of it in the grid (a light bug dimmed)
+		bool wet = false;    // there is liquid in its area: its light changes as the liquid moves
 		std::vector<Entry> direct, scattered;
 	};
 
@@ -286,7 +287,7 @@ namespace onilight
 			{
 				s.direct.clear();
 				s.scattered.clear();
-				if (d.lux > 0.0f && d.range > 0.0f) Compute(g, d, s.direct, s.scattered);
+				s.wet = d.lux > 0.0f && d.range > 0.0f && Compute(g, d, s.direct, s.scattered) > 0;
 				s.traced = d.lux;
 				s.scale = 1.0f;
 				counters_.traces++;
@@ -310,6 +311,8 @@ namespace onilight
 			if (keep) s.kept = true;
 			else Free(id);
 		}
+
+		bool Wet(int id) const { return id >= 0 && (size_t)id < sources_.size() && sources_[id].active && sources_[id].wet; }
 
 		void Free(int id)
 		{
@@ -350,7 +353,8 @@ namespace onilight
 		// Self-check against the grid as it is now, over the cells of `area`. out: [0] the largest difference of the direct
 		// light from tracing every source again; [1] of the light grid from computing every source again (lux); [2] of the
 		// light grid from carrying the reflected light of all sources at once over the whole grid (lux; differs by the light
-		// below MinScattered that each source drops); [3] the number of cells compared.
+		// below MinScattered that each source drops); [3] the number of cells compared; [4] the cell of the largest
+		// difference of the direct light, [5] of the light grid from computing every source again.
 		void Check(const GridView& g, Rect area, float* out)
 		{
 			area = Clip(area);
@@ -379,18 +383,22 @@ namespace onilight
 			Transport(grid, bounceAll, sc);
 			for (const Entry& e : sc) all[e.cell] += e.value;
 			float dd = 0.0f, d1 = 0.0f, d2 = 0.0f;
+			size_t worstDirect = 0, worstGrid = 0;
 			for (int y = area.y0; y <= area.y1; y++)
 				for (int x = area.x0; x <= area.x1; x++)
 				{
 					const size_t c = (size_t)y * w_ + x;
-					dd = std::max(dd, fabsf(direct[c] - direct_[c]));
-					d1 = std::max(d1, fabsf((float)(Round(direct[c] + scattered[c]) - g.lightCount[c])));
+					const float a = fabsf(direct[c] - direct_[c]), b = fabsf((float)(Round(direct[c] + scattered[c]) - g.lightCount[c]));
+					if (a > dd) { dd = a; worstDirect = c; }
+					if (b > d1) { d1 = b; worstGrid = c; }
 					d2 = std::max(d2, fabsf((float)(Round(direct[c] + all[c]) - g.lightCount[c])));
 				}
 			out[0] = dd;
 			out[1] = d1;
 			out[2] = d2;
 			out[3] = (float)area.Cells();
+			out[4] = (float)worstDirect;
+			out[5] = (float)worstGrid;
 		}
 
 	private:
@@ -455,11 +463,13 @@ namespace onilight
 			return natural != 0xFFFF ? Element(natural).reflectance : 0.0f;
 		}
 
-		// What the cells of a rectangle let through and reflect, from the game's grid as it is now.
-		void RefreshOptics(const GridView& g, Rect r)
+		// What the cells of a rectangle let through and reflect, from the game's grid as it is now. Returns the number of
+		// liquid cells in it.
+		int RefreshOptics(const GridView& g, Rect r)
 		{
 			r = Clip(r);
 			counters_.opticsCells += r.Cells();
+			int liquid = 0;
 			for (int y = r.y0; y <= r.y1; y++)
 			{
 				const size_t row = (size_t)y * w_;
@@ -478,9 +488,11 @@ namespace onilight
 					{
 						through_[c] = solid ? WindowThrough : e.state == Liquid ? expf(-e.absorb * g.mass[c]) : 1.0f;
 						albedo_[c] = BackReflectance(g, c);
+						liquid += !solid && e.state == Liquid;
 					}
 				}
 			}
+			return liquid;
 		}
 
 		float At(int x, int y) const { return x >= 0 && y >= 0 && x < w_ && y < h_ ? through_[(size_t)y * w_ + x] : 0.0f; }
@@ -518,16 +530,17 @@ namespace onilight
 				std::max(em[0].x, em[count - 1].x) + reach, std::max(em[0].y, em[count - 1].y) + reach });
 		}
 
-		// Direct and scattered light of a source, from the grid as it is now.
-		void Compute(const GridView& g, const SourceDesc& d, std::vector<Entry>& direct, std::vector<Entry>& scattered)
+		// Direct and scattered light of a source, from the grid as it is now. Returns the number of liquid cells in its area.
+		int Compute(const GridView& g, const SourceDesc& d, std::vector<Entry>& direct, std::vector<Entry>& scattered)
 		{
 			const Rect box = Box(d);
-			if (box.Empty()) return;
+			if (box.Empty()) return 0;
 			const Rect region = Clip(box.Grow(Steps));
-			RefreshOptics(g, region.Grow(1));
+			const int liquid = RefreshOptics(g, region.Grow(1));
 			bounce_.clear();
 			Trace(d, direct, bounce_);
 			if (!bounce_.empty()) Transport(region, bounce_, scattered);
+			return liquid;
 		}
 
 		// Direct and reflected light of a source; the optics of its box must be fresh.

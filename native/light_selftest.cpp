@@ -246,7 +246,7 @@ namespace
 		}
 		const std::vector<int32_t> result = f.grid.light;
 		if (narrower) return result;
-		float check[4];
+		float check[6];
 		f.engine.Check(g, { 0, 0, f.grid.w - 1, f.grid.h - 1 }, check);
 		Expect(check[0] < 0.05f, "updates: direct light as computed again", check[0], 0);
 		Expect(check[1] <= 1.0f, "updates: the light grid as computed again (lux)", check[1], 1);

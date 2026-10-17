@@ -372,7 +372,7 @@ int main(int argc, char** argv)
 			engine.Remove(view, k, true);
 			engine.Add(view, k, Desc(sources[k].x, sources[k].y, sources[k].lux, (float)sources[k].range, sources[k].cone));
 		}
-		float check[4];
+		float check[6];
 		engine.Check(view, { 0, 0, world.w - 1, world.h - 1 }, check);
 		const onilight::Counters& st = engine.Stats();
 		printf("%d lights: build all  game %.2f ms, new %.2f ms;  update one  game %.1f us, new %.1f us, brightness only %.2f us;  "
