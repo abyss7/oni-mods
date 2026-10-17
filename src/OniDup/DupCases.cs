@@ -28,12 +28,13 @@ namespace OniDup
 	/// </summary>
 	internal static class DupCases
 	{
-		private const int Rooms = 25, RoomsPerRow = 6, RoomWidth = 5, RoomHeight = 3;
+		private const int Rooms = 28, RoomsPerRow = 6, RoomWidth = 5, RoomHeight = 3;
 		private const int SiteWidth = 1 + RoomsPerRow * (RoomWidth + 1), SiteHeight = 1 + (Rooms + RoomsPerRow - 1) / RoomsPerRow * (RoomHeight + 1);
 		private const float Warm = 300f, AirMass = 1.8f, StartAfter = 8f;
 		private const int Normal = 0, Stuffy = 1, Headache = 2, Poisoning = 3, PassingOut = 4, Thin = 5, Lightheaded = 6, Gasping = 7, NoOxygen = 8,
 			Vacuum = 9, Toxic = 10, Drop = 11, Waist = 12, Head = 13, DigOnTheWay = 14, DigAtWork = 15,
-			MaskPoorAir = 16, MaskCarbon = 17, MaskVacuum = 18, AtmoSuit = 19, JetSuit = 20, LeadSuit = 21, UnderWater = 22, AirSupply = 23, Bionic = 24;
+			MaskPoorAir = 16, MaskCarbon = 17, MaskVacuum = 18, AtmoSuit = 19, JetSuit = 20, LeadSuit = 21, UnderWater = 22, AirSupply = 23, Bionic = 24,
+			Pill = 25, PillWithHat = 26, PillColonist = 27;
 		private static readonly string[] Names =
 		{
 			"normal air", "stuffy air (CO2 2 kPa)", "a CO2 headache (4 kPa)", "CO2 poisoning (6.5 kPa)", "passing out and death from CO2 (14 kPa)",
@@ -42,7 +43,7 @@ namespace OniDup
 			"a wall as the dig starts",
 			"an oxygen mask in air poor in oxygen", "an oxygen mask in carbon dioxide", "an oxygen mask in a vacuum", "an atmo suit into a vacuum",
 			"a jet suit into a vacuum", "a lead suit into a vacuum", "the head under water", "a building's air supply in a vacuum",
-			"a bionic duplicant in carbon dioxide",
+			"a bionic duplicant in carbon dioxide", "taking a pill", "taking a pill in a hat", "taking a pill, a Duplicant of the colony",
 		};
 		// Equipment of the scenes, by room.
 		private static readonly Dictionary<int, string> Outfits = new Dictionary<int, string>
@@ -295,6 +296,23 @@ namespace OniDup
 		{
 			for (int room = 0; room < Rooms; room++)
 			{
+				if (room == PillColonist)
+				{
+					// A Duplicant of the colony, with their clothes, hat and history, is brought into the room.
+					MinionIdentity colonist = Components.LiveMinionIdentities.Items.FirstOrDefault(m => m != null && !dupes.Contains(m.gameObject) &&
+						m.model == GameTags.Minions.Models.Standard);
+					if (colonist == null)
+					{
+						Skip(room, "no Duplicant in the colony");
+						continue;
+					}
+					colonist.GetComponent<ChoreDriver>()?.StopChore();
+					colonist.GetComponent<Navigator>()?.Stop();
+					colonist.transform.SetPosition(Grid.CellToPosCBC(RoomCell(room, 3, 0), Grid.SceneLayer.Move));
+					dupes[room] = colonist.gameObject;
+					Debug.Log($"{ModContext.Tag} DupCases: {Names[room]}: {colonist.GetProperName()}, hat {colonist.GetComponent<MinionResume>()?.CurrentHat ?? "none"}");
+					continue;
+				}
 				Tag model = room == Bionic ? GameTags.Minions.Models.Bionic : GameTags.Minions.Models.Standard;
 				GameObject prefab = Assets.TryGetPrefab(room == Bionic ? (Tag)BionicMinionConfig.ID : (Tag)MinionConfig.ID);
 				if (prefab == null || (Outfits.TryGetValue(room, out string outfit) && Assets.TryGetPrefab(outfit) == null))
@@ -504,12 +522,74 @@ namespace OniDup
 							!dupe.GetComponent<KSelectable>().HasStatusItem(DupAir.VacuumStatus), dupe, $"health {health.hitPoints:F1}");
 					}
 					break;
+				case Pill:
+				case PillWithHat:
+				case PillColonist:
+					PillScene(room, t, dupe);
+					break;
 				case Bionic:
 					if (t >= 10f)
 					{
 						Expect(room, air == null && OnlyEffect(dupe, null), dupe, "not watched by the mod");
 					}
 					break;
+			}
+		}
+
+		// Taking a pill: the Duplicant's animation is followed while they take it; it must not stand still.
+		private static readonly Dictionary<int, string> pillAnim = new Dictionary<int, string>();
+		private static readonly Dictionary<int, float> pillStill = new Dictionary<int, float>(), pillStart = new Dictionary<int, float>(), pillLast = new Dictionary<int, float>();
+		private static readonly Dictionary<int, GameObject> pills = new Dictionary<int, GameObject>();
+
+		private static void PillScene(int room, float t, GameObject dupe)
+		{
+			if (t >= 1f && !pills.ContainsKey(room))
+			{
+				if (room == PillWithHat)
+				{
+					MinionResume resume = dupe.GetComponent<MinionResume>();
+					resume.SetHats(null, "hat_role_mining1");
+					resume.ApplyTargetHat();
+				}
+				GameObject pill = Util.KInstantiate(Assets.GetPrefab(BasicBoosterConfig.ID));
+				pill.transform.SetPosition(Grid.CellToPosCBC(RoomCell(room, 0, 0), Grid.SceneLayer.Ore));
+				pill.SetActive(true);
+				pills[room] = pill;
+				return;
+			}
+			if (!pills.ContainsKey(room))
+			{
+				return;
+			}
+			KBatchedAnimController anim = dupe.GetComponent<KBatchedAnimController>();
+			bool taking = dupe.HasTag(GameTags.TakingMedicine);
+			if (taking)
+			{
+				if (!pillStart.ContainsKey(room))
+				{
+					pillStart[room] = t;
+					pillStill[room] = 0f;
+					pillLast[room] = t;
+				}
+				string name = $"{anim.GetCurrentAnim()?.name ?? "none"} ({anim.PlayMode}{(anim.IsStopped() ? ", stopped" : "")})";
+				float elapsed = anim.GetElapsedTime();
+				if (anim.IsStopped())
+				{
+					pillStill[room] += t - pillLast[room];
+				}
+				pillLast[room] = t;
+				if (!pillAnim.TryGetValue(room, out string last) || last != name)
+				{
+					pillAnim[room] = name;
+					Debug.Log($"{ModContext.Tag} DupCases: {Names[room]}: at {t - pillStart[room]:F1} s the animation is {name}, elapsed {elapsed:F2} s, " +
+						$"overrides [{string.Join(", ", anim.OverrideAnimFiles.Select(data => data.file != null ? data.file.name : "?"))}]");
+				}
+			}
+			bool taken = pills[room] == null;
+			if ((taken && !taking) || t >= 90f)
+			{
+				float still = pillStill.TryGetValue(room, out float value) ? value : -1f;
+				Expect(room, taken && pillStart.ContainsKey(room) && still < 1f, dupe, $"taken {taken}, standing still {still:F1} s while taking it");
 			}
 		}
 
