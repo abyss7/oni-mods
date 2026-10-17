@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using HarmonyLib;
@@ -8,8 +9,8 @@ using UnityEngine;
 namespace OniCommon
 {
 	/// <summary>
-	/// Common mixtures interface for the gas mixture and liquid mixture mods: the tooltip under the cursor, the selected-cell line and
-	/// the mixtures overlay (formerly the oxygen overlay). Each mod describes its own group (a "provider") and registers it here; the game's
+	/// Common mixtures interface for the gas mixture and liquid mixture mods: the tooltip under the cursor, the selected-cell line,
+	/// the mixtures overlay (its own button next to the oxygen one) and the views of the whole air in the oxygen overlay. Each mod describes its own group (a "provider") and registers it here; the game's
 	/// functions are patched only by the mod that registered first, and the others just add their group. This way the mods do not
 	/// compete for the same game functions and work together or alone: the overlay and the tooltip show gases, liquids or
 	/// both, each group in its own block.
@@ -31,10 +32,11 @@ namespace OniCommon
 	///   "legend"   Func&lt;List&lt;LegendEntry&gt;&gt;          legend while a key of this group is selected;
 	///   "base"     Func&lt;SimDebugView, int, Color&gt;   optional: colour of the normal view (breathable or not), while "baseActive";
 	///   "baseActive" Func&lt;bool&gt;;
-	///   "flat"     bool                            optional: true puts the provider's choices right under the normal view, without
-	///                                              a group title (a view of the whole air rather than a group of substances);
-	///   "overlayName", "overlayButton", "overlayTooltip" Func&lt;string&gt;: overlay names (the same in meaning for all providers,
-	///              taken from the first one).
+	///   "flat"     bool                            optional: true puts the provider's choices into the oxygen overlay, right under
+	///                                              its normal view (a view of the whole air rather than a group of substances);
+	///                                              the other providers are groups of the mixtures overlay;
+	///   "overlayName", "overlayButton", "overlayTooltip" Func&lt;string&gt;: the mixtures overlay's names (the same in meaning for
+	///              all providers, taken from the first one).
 	/// </summary>
 	internal static class MixtureUi
 	{
@@ -85,21 +87,7 @@ namespace OniCommon
 				transpiler: new HarmonyMethod(typeof(MixtureUi), nameof(AddHoverLines)));
 			harmony.Patch(AccessTools.Method(typeof(CellSelectionObject), "UpdateStatusItem"),
 				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(UpdatePanel)));
-			harmony.Patch(AccessTools.Method(typeof(SimDebugView), "OnPrefabInit"),
-				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(ReplaceColourFunction)));
-			harmony.Patch(AccessTools.Method(typeof(SimDebugView), nameof(SimDebugView.UpdateData)),
-				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(BeforeRedraw)));
-			harmony.Patch(AccessTools.Method(typeof(OverlayModes.Oxygen), nameof(OverlayModes.Oxygen.Enable)),
-				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(BuildChoice)));
-			// Before the game's method: it immediately rebuilds the legend, and the selection in it must already be the new one.
-			harmony.Patch(AccessTools.Method(typeof(OverlayLegend), "OnFiltersChanged"),
-				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(ChoiceChanged)));
-			harmony.Patch(AccessTools.Method(typeof(OverlayLegend), "PopulateOverlayInfoUnits"),
-				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(HideBreathingLegend)));
-			harmony.Patch(AccessTools.Method(typeof(OverlayModes.Mode), nameof(OverlayModes.Mode.GetCustomLegendData)),
-				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(Legend)));
-			harmony.Patch(AccessTools.Method(typeof(OverlayMenu), "InitializeToggles"),
-				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(RenameButton)));
+			InstallOverlays(harmony);
 		}
 
 		// ---------- Tooltip under the cursor ----------
@@ -208,40 +196,204 @@ namespace OniCommon
 			}
 		}
 
-		// ---------- Overlay ----------
+		// ---------- Overlays ----------
+		// Two overlays. The game's oxygen overlay keeps breathing: its normal "Breathable" view and the views of the whole air
+		// ("flat" providers, like Breathing Conditions). A new "Mixtures" overlay right after it in the overlay bar, with its own
+		// button and icon, shows the groups of substances (gases, liquids) and exists only if such a group is registered. Each
+		// overlay has its own selection list in the legend and its own selected provider.
 
-		/// <summary>
-		/// With gas and liquid selection the overlay is no longer only about oxygen: the button and the tooltip in the overlay list are taken from
-		/// the providers (from the first one that has them).
-		/// </summary>
-		private static void RenameButton()
+		/// <summary>The mixtures overlay's mode identifier.</summary>
+		internal static readonly HashedString MixturesId = "OniMixtures";
+		private const string IconName = "onimods_overlay_mixtures";
+
+		/// <summary>The mixtures overlay: drawn like the oxygen one (cell colours from SimDebugView), with its own selection.</summary>
+		internal sealed class MixturesMode : OverlayModes.Mode
 		{
-			foreach (Dictionary<string, object> provider in providers ?? new List<Dictionary<string, object>>())
+			public override HashedString ViewMode() => MixturesId;
+
+			public override string GetSoundName() => "Oxygen";
+
+			public override void Enable()
 			{
-				if (Text(provider, "overlayButton") is string button)
-				{
-					STRINGS.UI.OVERLAYS.OXYGEN.BUTTON = button;
-					STRINGS.UI.TOOLTIPS.OXYGENOVERLAYSTRING = Text(provider, "overlayTooltip") ?? button;
-					return;
-				}
+				BuildChoice(this);
+				base.Enable();
+				SelectTool.Instance.SetLayerMask(SelectTool.Instance.GetDefaultLayerMask() | LayerMask.GetMask("MaskedOverlay"));
+			}
+
+			public override void Disable()
+			{
+				base.Disable();
+				SelectTool.Instance.ClearLayerMask();
 			}
 		}
 
-		private static void ReplaceColourFunction(SimDebugView __instance)
+		private static Dictionary<string, object> activeMixtures; // provider of the selection in the mixtures overlay
+
+		private static bool HasGroups => providers != null && providers.Exists(provider => !IsFlat(provider));
+
+		private static bool IsMixtures(OverlayModes.Mode mode) => mode != null && mode.ViewMode() == MixturesId;
+
+		private static void InstallOverlays(Harmony harmony)
 		{
-			Dictionary<HashedString, Func<SimDebugView, int, Color>> functions =
-				Traverse.Create(__instance).Field<Dictionary<HashedString, Func<SimDebugView, int, Color>>>("getColourFuncs").Value;
+			harmony.Patch(AccessTools.Method(typeof(SimDebugView), "OnPrefabInit"),
+				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(ColourFunctions)));
+			harmony.Patch(AccessTools.Method(typeof(SimDebugView), nameof(SimDebugView.UpdateData)),
+				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(BeforeRedraw)));
+			harmony.Patch(AccessTools.Method(typeof(OverlayModes.Oxygen), nameof(OverlayModes.Oxygen.Enable)),
+				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(BuildChoice)));
+			// Before the game's method: it immediately rebuilds the legend, and the selection in it must already be the new one.
+			harmony.Patch(AccessTools.Method(typeof(OverlayLegend), "OnFiltersChanged"),
+				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(ChoiceChanged)));
+			harmony.Patch(AccessTools.Method(typeof(OverlayLegend), "PopulateOverlayInfoUnits"),
+				prefix: new HarmonyMethod(typeof(MixtureUi), nameof(HideBreathingLegend)));
+			harmony.Patch(AccessTools.Method(typeof(OverlayModes.Mode), nameof(OverlayModes.Mode.GetCustomLegendData)),
+				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(Legend)));
+			harmony.Patch(AccessTools.Method(typeof(OverlayScreen), "RegisterModes"),
+				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(RegisterMixtures)));
+			harmony.Patch(AccessTools.Method(typeof(OverlayMenu), "InitializeToggles"),
+				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(AddButton)));
+			harmony.Patch(AccessTools.Method(typeof(SelectToolHoverTextCard), "OnSpawn"),
+				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(HoverFilter)));
+			harmony.Patch(AccessTools.Method(typeof(CellSelectionObject), "OnSpawn"),
+				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(SelectionFilter)));
+		}
+
+		private static void RegisterMixtures(OverlayScreen __instance)
+		{
+			if (!HasGroups)
+			{
+				return;
+			}
+			try
+			{
+				__instance.RegisterMode(new MixturesMode());
+				// Status items are not tied to this overlay; without the entry the game warns on every change.
+				if (!StatusItem.overlayBitfieldMap.ContainsKey(MixturesId))
+				{
+					StatusItem.overlayBitfieldMap.Add(MixturesId, StatusItem.StatusItemOverlays.None);
+				}
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"{ModContext.Tag} mixture interface: the mixtures overlay could not be registered: {e}");
+			}
+		}
+
+		/// <summary>The mixtures overlay's button, right after the oxygen one; the text and the tooltip come from the providers.</summary>
+		private static void AddButton(OverlayMenu __instance)
+		{
+			if (!HasGroups)
+			{
+				return;
+			}
+			try
+			{
+				string button = null, tooltip = null;
+				foreach (Dictionary<string, object> provider in providers)
+				{
+					if (button == null && Text(provider, "overlayButton") is string text)
+					{
+						button = text;
+						tooltip = Text(provider, "overlayTooltip");
+					}
+				}
+				button = button ?? "Mixtures Overlay";
+				tooltip = (tooltip ?? button).Replace("{Hotkey}", "").TrimEnd();
+				string icon = LoadIcon() ? IconName : "overlay_gasvent";
+				var toggle = new OverlayMenu.OverlayToggleInfo(button, icon, MixturesId, "", Action.NumActions, tooltip, button);
+				int oxygen = __instance.overlayToggleInfos.FindIndex(info => info is OverlayMenu.OverlayToggleInfo overlay && overlay.simView == OverlayModes.Oxygen.ID);
+				__instance.overlayToggleInfos.Insert(oxygen + 1, toggle);
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"{ModContext.Tag} mixture interface: the mixtures overlay button could not be added: {e}");
+			}
+		}
+
+		/// <summary>
+		/// The button icon, drawn here (no picture file to carry in every mod): three bubbles of different sizes, white on
+		/// transparent like the game's overlay icons, the middle one a ring. Put among the game's sprites once.
+		/// </summary>
+		private static bool LoadIcon()
+		{
+			if (Assets.Sprites.ContainsKey(IconName))
+			{
+				return true;
+			}
+			const int size = 64;
+			// Bubbles: centre x, y, outer radius, inner radius (0: filled).
+			float[,] bubbles = { { 22f, 24f, 16f, 0f }, { 44f, 38f, 14f, 8.5f }, { 22f, 50f, 8f, 0f } };
+			var pixels = new Color32[size * size];
+			for (int y = 0; y < size; y++)
+			{
+				for (int x = 0; x < size; x++)
+				{
+					float alpha = 0f;
+					for (int b = 0; b < bubbles.GetLength(0); b++)
+					{
+						float distance = Mathf.Sqrt((x + 0.5f - bubbles[b, 0]) * (x + 0.5f - bubbles[b, 0]) + (y + 0.5f - bubbles[b, 1]) * (y + 0.5f - bubbles[b, 1]));
+						// Soft edges one pixel wide.
+						float inside = Mathf.Clamp01(bubbles[b, 2] - distance + 0.5f);
+						if (bubbles[b, 3] > 0f)
+						{
+							inside *= Mathf.Clamp01(distance - bubbles[b, 3] + 0.5f);
+						}
+						alpha = Mathf.Max(alpha, inside);
+					}
+					pixels[(size - 1 - y) * size + x] = new Color32(255, 255, 255, (byte)(alpha * 255f));
+				}
+			}
+			var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, name = IconName };
+			texture.SetPixels32(pixels);
+			texture.Apply();
+			Sprite sprite = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+			sprite.name = IconName;
+			Assets.Sprites.Add(IconName, sprite);
+			return true;
+		}
+
+		/// <summary>Under the cursor and in cell selection the mixtures overlay picks gas and liquid cells, as the oxygen one picks gas.</summary>
+		private static void HoverFilter(SelectToolHoverTextCard __instance)
+		{
+			if (HasGroups && !__instance.overlayFilterMap.ContainsKey(MixturesId))
+			{
+				__instance.overlayFilterMap.Add(MixturesId, () =>
+				{
+					int cell = Grid.PosToCell(CameraController.Instance.baseCamera.ScreenToWorldPoint(KInputManager.GetMousePos()));
+					return Grid.IsValidCell(cell) && (Grid.Element[cell].IsGas || Grid.Element[cell].IsLiquid);
+				});
+			}
+		}
+
+		private static void SelectionFilter(CellSelectionObject __instance)
+		{
+			if (HasGroups && !__instance.overlayFilterMap.ContainsKey(MixturesId))
+			{
+				__instance.overlayFilterMap.Add(MixturesId, () => Grid.IsValidCell(__instance.mouseCell)
+					&& (Grid.Element[__instance.mouseCell].IsGas || Grid.Element[__instance.mouseCell].IsLiquid));
+			}
+		}
+
+		private static void ColourFunctions(SimDebugView __instance)
+		{
+			Dictionary<HashedString, Func<SimDebugView, int, Color>> functions = __instance.getColourFuncs;
 			if (functions == null || !functions.TryGetValue(OverlayModes.Oxygen.ID, out Func<SimDebugView, int, Color> current))
 			{
-				Debug.LogWarning($"{ModContext.Tag} mixture interface: the oxygen overlay colour function was not found; the overlay is left as is");
+				Debug.LogWarning($"{ModContext.Tag} mixture interface: the oxygen overlay colour function was not found; the overlays are left as they are");
 				overlayFailed = true;
 				return;
 			}
 			original = current;
 			functions[OverlayModes.Oxygen.ID] = Colour;
+			// The mixtures overlay is drawn the same way as the oxygen one.
+			functions[MixturesId] = MixturesColour;
+			if (__instance.dataUpdateFuncs.TryGetValue(OverlayModes.Oxygen.ID, out Action<SimDebugView, Texture> update))
+			{
+				__instance.dataUpdateFuncs[MixturesId] = update;
+			}
 		}
 
-		/// <summary>Called by the game from worker threads for each visible cell.</summary>
+		/// <summary>Oxygen overlay; called by the game from worker threads for each visible cell.</summary>
 		private static Color Colour(SimDebugView instance, int cell)
 		{
 			Dictionary<string, object> chosen = active;
@@ -259,11 +411,23 @@ namespace OniCommon
 			return original(instance, cell);
 		}
 
+		/// <summary>Mixtures overlay; called from worker threads.</summary>
+		private static Color MixturesColour(SimDebugView instance, int cell)
+		{
+			Dictionary<string, object> chosen = activeMixtures;
+			return chosen != null && Get<Func<int, Color>>(chosen, "colour") is Func<int, Color> colour ? colour(cell) : Color.black;
+		}
+
 		private static void BeforeRedraw(HashedString viewMode)
 		{
-			if (!overlayFailed && active != null && viewMode == OverlayModes.Oxygen.ID)
+			if (overlayFailed)
 			{
-				Get<System.Action>(active, "refresh")?.Invoke();
+				return;
+			}
+			Dictionary<string, object> chosen = viewMode == OverlayModes.Oxygen.ID ? active : viewMode == MixturesId ? activeMixtures : null;
+			if (chosen != null)
+			{
+				Get<System.Action>(chosen, "refresh")?.Invoke();
 			}
 		}
 
@@ -280,10 +444,10 @@ namespace OniCommon
 		}
 
 		/// <summary>
-		/// Before the overlay is turned on, builds the selection list: the normal view and the views of the whole air, then the
-		/// providers' groups. With no selection in any group the overlay stays as in the game.
+		/// Before an overlay is turned on, builds its selection list. Oxygen: the normal view and the views of the whole air
+		/// (with none of those the overlay stays as in the game). Mixtures: the groups of substances.
 		/// </summary>
-		private static void BuildChoice(OverlayModes.Oxygen __instance)
+		private static void BuildChoice(OverlayModes.Mode __instance)
 		{
 			if (overlayFailed || providers == null)
 			{
@@ -294,57 +458,110 @@ namespace OniCommon
 				// The mode may be turned on again while it is already on; the game then does not rebuild the legend.
 				if (__instance.legendFilters != null && OverlayLegend.Instance != null)
 				{
-					Traverse legend = Traverse.Create(OverlayLegend.Instance);
-					if (ReferenceEquals(legend.Field("currentMode").GetValue(), __instance) && legend.Field("filterMenu").GetValue() as UnityEngine.Object != null)
+					if (ReferenceEquals(OverlayLegend.Instance.currentMode, __instance) && OverlayLegend.Instance.filterMenu != null)
 					{
 						return;
 					}
 				}
-				ToolParameterMenu.ToggleData[] toggles = BuildToggles();
-				__instance.legendFilters = toggles.Length > 1 ? toggles : null;
+				bool mixtures = IsMixtures(__instance);
+				ToolParameterMenu.ToggleData[] toggles = mixtures ? MixturesToggles() : OxygenToggles();
+				__instance.legendFilters = toggles.Length > (mixtures ? 0 : 1) ? toggles : null;
 				// The legend builds a selection list only for overlays marked as "filled from code" (like the temperature one).
-				List<OverlayLegend.OverlayInfo> infos = OverlayLegend.Instance == null ? null
-					: Traverse.Create(OverlayLegend.Instance).Field<List<OverlayLegend.OverlayInfo>>("overlayInfoList").Value;
-				OverlayLegend.OverlayInfo info = infos?.Find(candidate => candidate.mode == OverlayModes.Oxygen.ID);
+				List<OverlayLegend.OverlayInfo> infos = OverlayLegend.Instance?.overlayInfoList;
+				if (infos == null)
+				{
+					return;
+				}
+				HashedString id = __instance.ViewMode();
+				OverlayLegend.OverlayInfo info = infos.Find(candidate => candidate.mode == id);
+				if (info == null && mixtures)
+				{
+					info = new OverlayLegend.OverlayInfo { mode = id, infoUnits = new List<OverlayLegend.OverlayInfoUnit>(), diagrams = new List<GameObject>() };
+					infos.Add(info);
+				}
 				if (info != null)
 				{
 					info.isProgrammaticallyPopulated = __instance.legendFilters != null;
-					foreach (Dictionary<string, object> provider in providers)
+					if (mixtures)
 					{
-						if (Text(provider, "overlayName") is string name)
-						{
-							info.name = name;
-							break;
-						}
+						info.name = providers.Select(provider => Text(provider, "overlayName")).FirstOrDefault(name => name != null) ?? "MIXTURES OVERLAY";
 					}
 				}
 			}
 			catch (Exception e)
 			{
 				overlayFailed = true;
-				active = null;
+				active = activeMixtures = null;
 				__instance.legendFilters = null;
 				Debug.LogWarning($"{ModContext.Tag} mixture interface: the overlay part is switched off after an error: {e}");
 			}
 		}
 
 		private const string HeadingPrefix = "ONIMIXTUREGROUP";
-		private static string expanded; // id of the group whose list is open; one at a time
+		private static string expanded; // id of the group whose list is open in the mixtures overlay; one at a time
 		private static readonly Dictionary<string, string> groupOfHeading = new Dictionary<string, string>();
 
-		/// <summary>
-		/// The switches of the list. A group of substances shows only its title, "+ GASES", until it is clicked; then its
-		/// substances open under it ("– GASES") and the other group closes. The group with the current selection is open.
-		/// </summary>
-		private static ToolParameterMenu.ToggleData[] BuildToggles()
+		/// <summary>Oxygen overlay: the normal "Breathable" view, then the views of the whole air.</summary>
+		private static ToolParameterMenu.ToggleData[] OxygenToggles()
 		{
 			var toggles = new List<ToolParameterMenu.ToggleData>();
 			AddString(BaseKey, STRINGS.MISC.TAGS.BREATHABLE, STRINGS.UI.OVERLAYS.OXYGEN.TOOLTIPS.LEGEND2);
 			Dictionary<string, object> stillActive = null;
-			// Views of the whole air first, right under the normal view; then the groups of substances.
-			var ordered = new List<Dictionary<string, object>>(providers.FindAll(provider => IsFlat(provider)));
-			ordered.AddRange(providers.FindAll(provider => !IsFlat(provider)));
-			foreach (Dictionary<string, object> provider in ordered)
+			foreach (Dictionary<string, object> provider in providers.FindAll(IsFlat))
+			{
+				List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
+				if (choices == null || choices.Count == 0)
+				{
+					continue;
+				}
+				string current = Get<Func<string>>(provider, "current")?.Invoke();
+				bool found = false;
+				foreach (string[] choice in choices)
+				{
+					AddString(choice[0], choice[1], choice[2]);
+					bool on = choice[0] == current;
+					found = found || on;
+					toggles.Add(new ToolParameterMenu.ToggleData(choice[0], on ? ToolParameterMenu.ToggleState.On : ToolParameterMenu.ToggleState.Off));
+				}
+				if (found && stillActive == null)
+				{
+					stillActive = provider;
+				}
+				else if (current != null)
+				{
+					Get<Action<string>>(provider, "select")?.Invoke(null);
+				}
+			}
+			active = stillActive;
+			toggles.Insert(0, new ToolParameterMenu.ToggleData(BaseKey, active == null ? ToolParameterMenu.ToggleState.On : ToolParameterMenu.ToggleState.Off));
+			return toggles.ToArray();
+		}
+
+		/// <summary>
+		/// Mixtures overlay: the groups of substances. A group shows only its title, "+ GASES", until it is clicked; then its
+		/// substances open under it ("– GASES") and the other group closes. The group with the current selection is open. With no
+		/// selection the first substance of the first group is selected: the overlay always shows something.
+		/// </summary>
+		private static ToolParameterMenu.ToggleData[] MixturesToggles()
+		{
+			var toggles = new List<ToolParameterMenu.ToggleData>();
+			List<Dictionary<string, object>> groups = providers.FindAll(provider => !IsFlat(provider));
+			bool anySelected = groups.Exists(provider => Get<Func<string>>(provider, "current")?.Invoke() != null);
+			if (!anySelected)
+			{
+				foreach (Dictionary<string, object> provider in groups)
+				{
+					List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
+					if (choices != null && choices.Count > 0)
+					{
+						choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
+						Get<Action<string>>(provider, "select")?.Invoke(choices[0][0]);
+						break;
+					}
+				}
+			}
+			Dictionary<string, object> stillActive = null;
+			foreach (Dictionary<string, object> provider in groups)
 			{
 				List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
 				if (choices == null || choices.Count == 0)
@@ -353,22 +570,18 @@ namespace OniCommon
 				}
 				string id = (string)provider["id"];
 				string current = Get<Func<string>>(provider, "current")?.Invoke();
-				bool flat = IsFlat(provider);
-				if (!flat && current != null && choices.Exists(choice => choice[0] == current))
+				if (current != null && choices.Exists(choice => choice[0] == current))
 				{
 					expanded = id;
 				}
-				bool open = flat || expanded == id;
-				if (!flat)
-				{
-					string heading = HeadingPrefix + id.ToUpperInvariant();
-					groupOfHeading[heading] = id;
-					// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals.
-					string title = Text(provider, "title") ?? id;
-					AddString(heading, (open ? "– " : "+ ") + title.ToUpper(), title);
-					toggles.Add(new ToolParameterMenu.ToggleData(heading, ToolParameterMenu.ToggleState.Off));
-					choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
-				}
+				bool open = expanded == id;
+				string heading = HeadingPrefix + id.ToUpperInvariant();
+				groupOfHeading[heading] = id;
+				// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals.
+				string title = Text(provider, "title") ?? id;
+				AddString(heading, (open ? "– " : "+ ") + title.ToUpper(), title);
+				toggles.Add(new ToolParameterMenu.ToggleData(heading, ToolParameterMenu.ToggleState.Off));
+				choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
 				bool found = false;
 				foreach (string[] choice in choices)
 				{
@@ -386,12 +599,10 @@ namespace OniCommon
 				}
 				else if (current != null)
 				{
-					// The group's selection is gone (or something is selected in another group): the group returns to the normal view.
 					Get<Action<string>>(provider, "select")?.Invoke(null);
 				}
 			}
-			active = stillActive;
-			toggles.Insert(0, new ToolParameterMenu.ToggleData(BaseKey, active == null ? ToolParameterMenu.ToggleState.On : ToolParameterMenu.ToggleState.Off));
+			activeMixtures = stillActive;
 			return toggles.ToArray();
 		}
 
@@ -400,21 +611,17 @@ namespace OniCommon
 		{
 			string id = groupOfHeading[heading];
 			expanded = expanded == id ? null : id;
-			mode.legendFilters = BuildToggles();
+			mode.legendFilters = MixturesToggles();
 			// The menu is rebuilt on the next frame, outside its own click handler.
 			UIScheduler.Instance.Schedule("MixtureUi.ToggleGroup", 0f, _ =>
 			{
 				OverlayLegend legend = OverlayLegend.Instance;
-				if (legend == null || !ReferenceEquals(Traverse.Create(legend).Field("currentMode").GetValue(), mode))
+				if (legend == null || !ReferenceEquals(legend.currentMode, mode) || legend.filterMenu == null)
 				{
 					return;
 				}
-				var menu = Traverse.Create(legend).Field("filterMenu").GetValue() as ToolParameterMenu;
-				if (menu != null)
-				{
-					menu.PopulateMenu(mode.legendFilters);
-					Traverse.Create(legend).Method("ConfigureUIHeight").GetValue();
-				}
+				legend.filterMenu.PopulateMenu(mode.legendFilters);
+				legend.ConfigureUIHeight();
 			});
 		}
 
@@ -425,14 +632,15 @@ namespace OniCommon
 
 		private static void ChoiceChanged(OverlayModes.Mode ___currentMode)
 		{
-			if (overlayFailed || providers == null || !(___currentMode is OverlayModes.Oxygen) || ___currentMode.legendFilters == null)
+			bool mixtures = IsMixtures(___currentMode);
+			if (overlayFailed || providers == null || !(mixtures || ___currentMode is OverlayModes.Oxygen) || ___currentMode.legendFilters == null)
 			{
 				return;
 			}
 			string chosen = null;
 			foreach (ToolParameterMenu.ToggleData toggle in ___currentMode.legendFilters)
 			{
-				if (toggle.IsOn && toggle.name.StartsWith(HeadingPrefix) && groupOfHeading.ContainsKey(toggle.name))
+				if (mixtures && toggle.IsOn && toggle.name.StartsWith(HeadingPrefix) && groupOfHeading.ContainsKey(toggle.name))
 				{
 					ToggleGroup(___currentMode, toggle.name);
 					return;
@@ -443,7 +651,7 @@ namespace OniCommon
 				}
 			}
 			Dictionary<string, object> owner = null;
-			foreach (Dictionary<string, object> provider in providers)
+			foreach (Dictionary<string, object> provider in providers.FindAll(provider => IsFlat(provider) != mixtures))
 			{
 				List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
 				bool mine = chosen != null && choices != null && choices.Exists(choice => choice[0] == chosen);
@@ -457,10 +665,17 @@ namespace OniCommon
 					Get<Action<string>>(provider, "select")?.Invoke(mine ? chosen : null);
 				}
 			}
-			active = owner;
+			if (mixtures)
+			{
+				activeMixtures = owner;
+			}
+			else
+			{
+				active = owner;
+			}
 		}
 
-		/// <summary>The "breathable / not breathable" notes belong to the normal view; the picture of a selected substance has none.</summary>
+		/// <summary>The "breathable / not breathable" notes belong to the oxygen overlay's normal view; a view of the whole air has its own legend.</summary>
 		private static bool HideBreathingLegend(OverlayModes.Mode ___currentMode)
 		{
 			return !(active != null && !overlayFailed && ___currentMode is OverlayModes.Oxygen);
@@ -468,7 +683,12 @@ namespace OniCommon
 
 		private static void Legend(OverlayModes.Mode __instance, ref List<LegendEntry> __result)
 		{
-			if (active != null && !overlayFailed && __instance is OverlayModes.Oxygen && Get<Func<List<LegendEntry>>>(active, "legend") is Func<List<LegendEntry>> legend)
+			if (overlayFailed)
+			{
+				return;
+			}
+			Dictionary<string, object> chosen = __instance is OverlayModes.Oxygen ? active : IsMixtures(__instance) ? activeMixtures : null;
+			if (chosen != null && Get<Func<List<LegendEntry>>>(chosen, "legend") is Func<List<LegendEntry>> legend)
 			{
 				__result = legend();
 			}

@@ -384,7 +384,7 @@ namespace OniLiquidMix
 				if (frame == 0)
 				{
 					Debug.Log($"{ModContext.Tag} liquid overlay verify: {Sample()}");
-					OverlayScreen.Instance.ToggleOverlay(OverlayModes.Oxygen.ID, allowSound: false);
+					OverlayScreen.Instance.ToggleOverlay(MixtureUi.MixturesId, allowSound: false);
 				}
 				else if (frame == 10 || frame == 12)
 				{
@@ -399,7 +399,6 @@ namespace OniLiquidMix
 				}
 				else if (frame >= VerifyFrames)
 				{
-					Click(MixtureUi.BaseKey);
 					OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
 					verify = false;
 				}

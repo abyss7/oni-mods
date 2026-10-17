@@ -43,7 +43,6 @@ namespace OniGasMix
 	{
 		private const int Header = 8;                  // request header: eight ints before the mass array
 		private const string KeyPrefix = "ONIGASMIXGAS"; // names of the switches in the game's string table
-		private const string Breathable = MixtureUi.BaseKey;
 		private const int MaxGases = 63;
 		// A cell with less gas than this share of "a kilogram of Oxygen per cell" (by number of molecules) fades out.
 		private const float FadeBelow = 0.1f;
@@ -287,10 +286,10 @@ namespace OniGasMix
 				int frame = verifyFrame++;
 				if (frame == 0)
 				{
-					OverlayScreen.Instance.ToggleOverlay(OverlayModes.Oxygen.ID, allowSound: false);
-					// Views in order: the normal one, then gases from the preference list, then any others; up to three gases in total.
+					// The gases are in the mixtures overlay (the normal breathable view stays in the oxygen one).
+					OverlayScreen.Instance.ToggleOverlay(MixtureUi.MixturesId, allowSound: false);
+					// Views in order: gases from the preference list, then any others; up to three gases in total.
 					verifyViews.Clear();
-					verifyViews.Add(Breathable);
 					foreach (SimHashes wanted in VerifyFirst)
 					{
 						string key = KeyPrefix + wanted.ToString().ToUpperInvariant();
@@ -311,20 +310,18 @@ namespace OniGasMix
 				int view = frame / VerifyFramesPerView, phase = frame % VerifyFramesPerView;
 				if (view >= verifyViews.Count)
 				{
-					Click(Breathable);
 					OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
 					verify = false;
 					return;
 				}
 				if (phase == 1 || phase == 3)
 				{
-					// For the normal view too: the player may have opened the overlay with a gas selected. The second click is
-					// for a closed group: the first one opens it.
+					// The second click is for a closed group: the first one opens it.
 					Click(verifyViews[view]);
 				}
 				else if (phase == VerifyFramesPerView - 5)
 				{
-					string name = verifyViews[view] == Breathable ? "breathable" : verifyViews[view].Substring(KeyPrefix.Length).ToLowerInvariant();
+					string name = verifyViews[view].Substring(KeyPrefix.Length).ToLowerInvariant();
 					string file = Path.Combine(ModContext.Folder, $"verify_gas_overlay_{name}.png");
 					ScreenCapture.CaptureScreenshot(file);
 					Debug.Log($"[OniGasMix] GasLayerOverlay verify: view {name}, selected element {selected}, overlay {OverlayScreen.Instance.GetMode()}, choices {gasByKey.Count + 1}, file {file}");

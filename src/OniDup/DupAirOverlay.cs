@@ -42,8 +42,8 @@ namespace OniDup
 		}
 
 		// ---------- Self-check: the file verify_dup_overlay.txt in the mod folder ----------
-		// A while after loading, the overlay is opened over the colony and pictured three times: as it opens (the substance
-		// groups closed), with the gases group opened, and with this view selected.
+		// A while after loading, the overlays are opened over the colony and pictured: the oxygen overlay in its normal view
+		// and in this one, then the mixtures overlay as it opens (the first gas selected) and with the liquids group opened.
 
 		private static int verifyFrame = -1;
 		private static float verifyStart = -1f;
@@ -73,18 +73,23 @@ namespace OniDup
 				}
 				else if (frame == 30)
 				{
-					Picture("closed");
-					Click("ONIMIXTUREGROUPGAS");
+					Picture("breathable");
+					Click(Key);
 				}
 				else if (frame == 60)
 				{
-					Picture("gases");
-					Click(Key);
+					Picture("breathing");
+					Click(MixtureUi.BaseKey);
+					OverlayScreen.Instance.ToggleOverlay(MixtureUi.MixturesId, allowSound: false);
+				}
+				else if (frame == 90)
+				{
+					Picture("mixtures");
+					Click("ONIMIXTUREGROUPLIQUID");
 				}
 				else if (frame == 120)
 				{
-					Picture("breathing");
-					Click(MixtureUi.BaseKey);
+					Picture("liquids");
 					OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
 					verifyFrame = 1000;
 				}

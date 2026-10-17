@@ -13,7 +13,7 @@ namespace OniGasMix
 			// The overlay is shared with the liquid mixtures mod (src/Common/MixtureUi.cs): both mods use the same names.
 			public static LocString OVERLAY_NAME = "MIXTURES OVERLAY";
 			public static LocString OVERLAY_BUTTON = "Mixtures Overlay";
-			public static LocString OVERLAY_TOOLTIP = "Displays breathable air and the composition of mixtures of gases and liquids {Hotkey}";
+			public static LocString OVERLAY_TOOLTIP = "Displays the composition of mixtures of gases and liquids";
 			/// <summary>Title of the gas group in the overlay list.</summary>
 			public static LocString GROUP_TITLE = "Gases";
 		}

@@ -35,7 +35,7 @@ namespace OniLiquidMix
 		{
 			public static LocString OVERLAY_NAME = "MIXTURES OVERLAY";
 			public static LocString OVERLAY_BUTTON = "Mixtures Overlay";
-			public static LocString OVERLAY_TOOLTIP = "Displays breathable air and the composition of mixtures of gases and liquids {Hotkey}";
+			public static LocString OVERLAY_TOOLTIP = "Displays the composition of mixtures of gases and liquids";
 			/// <summary>Title of the liquids group in the overlay legend.</summary>
 			public static LocString GROUP_TITLE = "Liquids";
 		}
