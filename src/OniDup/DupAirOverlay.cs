@@ -10,10 +10,10 @@ namespace OniDup
 {
 	/// <summary>
 	/// "Breathing Conditions": the oxygen overlay's view in place of the game's breathable one, with its own legend (shared
-	/// mixtures interface, src/Common/MixtureUi.cs). It colours the air by the zones of DupAir: Oxygen on the game's colour
-	/// scale, from the best at a normal pressure down through thin air, lightheaded and gasping for air to unbreathable red; a vacuum where body fluids
-	/// boil in deep blue; too much Oxygen in yellow and orange; Carbon Dioxide on its own purple scale, from stuffy air to a
-	/// blackout, wherever it harms at least as much as the Oxygen there.
+	/// mixtures interface, src/Common/MixtureUi.cs). It colours the air by the zones of DupAir: Oxygen from the game's breathable
+	/// blue at a normal pressure through pale colours (thin air, lightheaded, gasping for air) to the game's unbreathable red; a
+	/// vacuum where body fluids boil in dark grey; too much Oxygen in yellow and orange; Carbon Dioxide on its own dark blue
+	/// scale, from stuffy air to a blackout, wherever it harms at least as much as the Oxygen there.
 	/// Each cell is shown by its own air (as if a Duplicant without a mask breathed it).
 	/// The same band, named and coloured, is the note after a gas cell's mass in the cursor tooltip, instead of the game's
 	/// "(Very Breathable)" and the like.
@@ -242,7 +242,7 @@ namespace OniDup
 			{
 				lastBand = band;
 				// The deep colours (vacuum, the last steps of Carbon Dioxide) are lightened more, keeping the order of the steps.
-				float lighten = band == Band.Vacuum ? 0.45f : band == Band.Blackout ? 0.35f : band == Band.Poisoning ? 0.2f : 0.1f;
+				float lighten = band == Band.Vacuum ? 0.4f : band == Band.Blackout ? 0.45f : band == Band.Poisoning ? 0.35f : band == Band.Headache ? 0.25f : 0.1f;
 				Color text = Color.Lerp(colour, Color.white, lighten);
 				lastNote = " " + string.Format(STRINGS.ELEMENTS.BREATHABLEDESC, text.ToHexString(), name);
 			}
@@ -257,9 +257,9 @@ namespace OniDup
 				case Band.Toxic: return ToxicColour;
 				case Band.Rich: return RichColour;
 				case Band.Normal: return Scale(DupAir.Normal);
-				case Band.Thin: return Scale((DupAir.Normal + DupAir.Thin) / 2f);
-				case Band.Lightheaded: return Scale((DupAir.Thin + DupAir.Hypoxic) / 2f);
-				case Band.Gasping: return Scale((DupAir.Hypoxic + DupAir.Severe) / 2f);
+				case Band.Thin: return ThinColour;
+				case Band.Lightheaded: return LightheadedColour;
+				case Band.Gasping: return GaspingColour;
 				case Band.Unbreathable: return SimDebugView.Instance.unbreathableColour;
 				case Band.Vacuum: return VacuumColour;
 				case Band.Stuffy: case Band.Headache: case Band.Poisoning: case Band.Blackout: return CarbonColours[band - Band.Stuffy];
@@ -298,22 +298,31 @@ namespace OniDup
 		// Above the normal pressure: the colours of the game's oxygen overlay legend for harmful air (yellow, then orange).
 		private static readonly Color RichColour = new Color(0.95f, 0.85f, 0.3f, 1f), ToxicColour = new Color(0.95f, 0.5f, 0.15f, 1f);
 		// A vacuum: the deep blue of space, apart from the red of air without Oxygen.
-		private static readonly Color VacuumColour = new Color(0.12f, 0.18f, 0.45f, 1f);
-		// Carbon Dioxide on its own scale, from light lavender (stuffy air) to deep purple (a blackout).
-		private static readonly Color[] CarbonColours =
-		{
-			new Color(0.78f, 0.66f, 0.95f, 1f), new Color(0.66f, 0.45f, 0.92f, 1f), new Color(0.52f, 0.26f, 0.80f, 1f), new Color(0.36f, 0.10f, 0.58f, 1f),
-		};
+		private static readonly Color VacuumColour = Rgb(78, 78, 86);
+		// Carbon Dioxide on its own dark blue scale, from stuffy air to a blackout.
+		private static readonly Color[] CarbonColours = { Rgb(96, 126, 196), Rgb(68, 88, 176), Rgb(50, 54, 146), Rgb(38, 28, 100) };
+		// Too little Oxygen: from the game's breathable blue to its unbreathable red through pale colours (chosen by the author):
+		// the middles of thin air, lightheaded and gasping for air.
+		private static readonly Color ThinColour = Rgb(156, 180, 168), LightheadedColour = Rgb(204, 140, 124), GaspingColour = Rgb(214, 88, 72);
 
-		/// <summary>Place on the game's breathable gradient: from the lowest breathable zone (pO2 6 kPa) to normal air (15 kPa).</summary>
-		private static float Level(float oxygen)
+		private static Color Rgb(int r, int g, int b)
 		{
-			return Mathf.Clamp01((oxygen - DupAir.Severe) / (DupAir.Normal - DupAir.Severe));
+			return new Color(r / 255f, g / 255f, b / 255f, 1f);
 		}
 
+		/// <summary>
+		/// The colour of breathable air by the Oxygen in the lungs, from pO2 6 kPa to normal air: a curve through the middles of
+		/// the steps, from the game's breathable blue (the top of its scale) at 15 kPa and above.
+		/// </summary>
 		private static Color Scale(float oxygen)
 		{
-			return SimDebugView.Instance.breathableGradient.Evaluate(Level(oxygen));
+			Color easy = SimDebugView.Instance.breathableGradient.Evaluate(1f);
+			float thin = (DupAir.Normal + DupAir.Thin) / 2f, lightheaded = (DupAir.Thin + DupAir.Hypoxic) / 2f, gasping = (DupAir.Hypoxic + DupAir.Severe) / 2f;
+			if (oxygen >= DupAir.Normal) return easy;
+			if (oxygen >= thin) return Color.Lerp(ThinColour, easy, (oxygen - thin) / (DupAir.Normal - thin));
+			if (oxygen >= lightheaded) return Color.Lerp(LightheadedColour, ThinColour, (oxygen - lightheaded) / (thin - lightheaded));
+			if (oxygen >= gasping) return Color.Lerp(GaspingColour, LightheadedColour, (oxygen - gasping) / (lightheaded - gasping));
+			return GaspingColour;
 		}
 
 		private static List<LegendEntry> Legend()
