@@ -216,7 +216,9 @@ namespace OniDup
 			{
 				lastBand = band;
 				lastColour = colour;
-				Color text = Color.Lerp(colour, Color.white, band == Band.Vacuum || band >= Band.Headache ? 0.45f : 0.1f);
+				// The deep colours (vacuum, the last steps of Carbon Dioxide) are lightened more, keeping the order of the steps.
+				float lighten = band == Band.Vacuum ? 0.45f : band == Band.Blackout ? 0.35f : band == Band.Poisoning ? 0.2f : 0.1f;
+				Color text = Color.Lerp(colour, Color.white, lighten);
 				lastNote = " " + string.Format(STRINGS.ELEMENTS.BREATHABLEDESC, text.ToHexString(), name);
 			}
 			__result[3] = lastNote;
