@@ -1,0 +1,440 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using HarmonyLib;
+using OniCommon;
+using UnityEngine;
+
+namespace OniLight
+{
+	/// <summary>
+	/// Self-check of the light on scenes built in the game: the file verify_light_cases.txt in the mod folder. A few seconds
+	/// after loading, the mod finds room (in rock if it can; failing that in the open; failing that over loose items, wires
+	/// and pipes) in the active world and builds three equal rooms, each with a
+	/// ceiling light, a floor lamp and a pool of water: sandstone with a sandstone back wall, abyssalite with an abyssalite
+	/// back wall, granite with a granite back wall (later covered with sandstone drywall); a corridor from the first room
+	/// round a corner; a window and a plain wall from the second into closed pockets; a closed cell with a shine bug. The
+	/// lamps are switched on without power. Then it checks, writing "LightCases: name: ok" or "FAILED" with numbers to the log:
+	/// light in the rooms, the pale room lighter than the dark one, water dimming light by depth, light round the corner,
+	/// light through the window and none through the wall, a shelf casting a shadow, drywall making a room lighter, a lamp
+	/// switched off and on, a lamp removed, and that the light grid equals a full computation. Then it takes two pictures
+	/// (normal view and the light overlay) and closes the game. The world is changed: the check is meant for a test run on a
+	/// copy of the save.
+	/// </summary>
+	internal static class LightCases
+	{
+		private const int SiteWidth = 53, SiteHeight = 24;
+		private const float StartAfter = 8f, Warm = 293f;
+		// Rooms: interior 20 x 8 cells from (x, floor); walls 2 thick. A and B side by side below, C above A, the shine bug's
+		// cell above B.
+		private const int RoomA = 3, RoomB = 29, RoomC = 3, RoomWidth = 20, RoomHeight = 8, Floor = 2, FloorC = 14;
+		private const int Bug = 29;
+
+		private static int phase, originX, originY, frame;
+		private static float phaseTime;
+		private static int passed, failed;
+		private static readonly List<GameObject> lamps = new List<GameObject>();
+		private static GameObject floorLampA, floorLampB;
+		private static float meanA, meanB, meanC, probeA, probeB, shadowBefore;
+
+		internal static void Apply(Harmony harmony)
+		{
+			if (!File.Exists(Path.Combine(ModContext.Folder, "verify_light_cases.txt")))
+			{
+				return;
+			}
+			harmony.Patch(AccessTools.Method(typeof(Game), "LateUpdate"), postfix: new HarmonyMethod(typeof(LightCases), nameof(Frame)) { priority = Priority.Low });
+			Debug.Log($"{ModContext.Tag} LightCases: scenes will be built in the active world; the save is changed, use a copy");
+		}
+
+		private static int Cell(int x, int y) => Grid.XYToCell(originX + x, originY + y);
+
+		private static void Set(int x, int y, SimHashes element, float mass)
+		{
+			SimMessages.ReplaceElement(Cell(x, y), element, CellEventLogger.Instance.DebugTool, mass, Warm, byte.MaxValue, 0);
+		}
+
+		private static void Back(int x, int y, SimHashes element)
+		{
+			SimMessages.SetBackwallData(Cell(x, y), (ushort)ElementLoader.GetElementIndex(element), 100f, Warm);
+		}
+
+		private static void Next(float now)
+		{
+			phase++;
+			phaseTime = now;
+		}
+
+		private static void Frame()
+		{
+			if (phase > 9 || Game.Instance == null || GameClock.Instance == null || ClusterManager.Instance == null || !LightGrid.Ready)
+			{
+				return;
+			}
+			float now = GameClock.Instance.GetTime();
+			try
+			{
+				switch (phase)
+				{
+					case 0:
+						phaseTime = now;
+						phase = 1;
+						break;
+					case 1 when now >= phaseTime + StartAfter:
+						if (!FindSite())
+						{
+							Debug.LogWarning($"{ModContext.Tag} LightCases: FAILED: no free {SiteWidth} x {SiteHeight} place in the active world");
+							phase = 10;
+							return;
+						}
+						for (int y = 0; y < SiteHeight; y++)
+						{
+							for (int x = 0; x < SiteWidth; x++)
+							{
+								Set(x, y, SimHashes.Granite, 1000f);
+							}
+						}
+						Next(now);
+						break;
+					case 2 when now >= phaseTime + 1f:
+						Carve();
+						Next(now);
+						break;
+					case 3 when now >= phaseTime + 1f:
+						Furnish();
+						Next(now);
+						break;
+					case 4 when now >= phaseTime + 1f:
+						foreach (GameObject lamp in lamps)
+						{
+							SwitchOn(lamp, true);
+						}
+						Next(now);
+						break;
+					case 5 when now >= phaseTime + 3f:
+						FirstLook();
+						Next(now);
+						break;
+					case 6 when now >= phaseTime + 3f:
+						SecondLook();
+						Next(now);
+						break;
+					case 7 when now >= phaseTime + 3f:
+						LastLook();
+						Next(now);
+						frame = 0;
+						break;
+					case 8:
+						if (++frame == 30)
+						{
+							Picture("normal");
+						}
+						else if (frame == 31)
+						{
+							OverlayScreen.Instance.ToggleOverlay(OverlayModes.Light.ID, allowSound: false);
+						}
+						else if (frame == 90)
+						{
+							Picture("light");
+						}
+						else if (frame == 91)
+						{
+							OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
+							LightGrid.Report("after the scenes");
+							Debug.Log($"{ModContext.Tag} LightCases: {passed} passed, {failed} failed; closing the game");
+							phase = 10;
+							App.Quit();
+						}
+						break;
+				}
+			}
+			catch (Exception e)
+			{
+				phase = 10;
+				Debug.LogWarning($"{ModContext.Tag} LightCases: FAILED: stopped after an error: {e}");
+			}
+		}
+
+		private static bool FindSite()
+		{
+			WorldContainer world = ClusterManager.Instance.activeWorld;
+			int minX = world.WorldOffset.x + 2, minY = world.WorldOffset.y + 2;
+			int maxX = world.WorldOffset.x + world.WorldSize.x - SiteWidth - 2, maxY = world.WorldOffset.y + world.WorldSize.y - SiteHeight - 2;
+			for (int pass = 0; pass < 3; pass++)
+			{
+				for (int y = minY; y <= maxY; y += 2)
+				{
+					for (int x = minX; x <= maxX; x += 3)
+					{
+						if (SiteFree(x, y, pass))
+						{
+							originX = x;
+							originY = y;
+							string where = pass == 0 ? "in rock" : pass == 1 ? "in the open" : "over loose things and utilities";
+							Debug.Log($"{ModContext.Tag} LightCases: site at {x},{y} ({where}), {SiteWidth} x {SiteHeight} cells");
+							return true;
+						}
+					}
+				}
+			}
+			return false;
+		}
+
+		// Pass 0: all rock, nothing there; 1: anything natural, nothing there; 2: no buildings or tiles (loose items, wires and
+		// pipes may be there: the check is for a copy of the save).
+		private static bool SiteFree(int x0, int y0, int pass)
+		{
+			for (int y = y0 - 1; y < y0 + SiteHeight + 1; y++)
+			{
+				for (int x = x0 - 1; x < x0 + SiteWidth + 1; x++)
+				{
+					int cell = Grid.XYToCell(x, y);
+					if (!Grid.IsValidCell(cell) || Grid.Foundation[cell] || (pass == 0 && !Grid.IsSolidCell(cell)) ||
+						World.Instance.zoneRenderData.GetSubWorldZoneType(cell) == ProcGen.SubWorld.ZoneType.Space)
+					{
+						return false;
+					}
+					for (int layer = 0; layer < (int)ObjectLayer.NumLayers; layer++)
+					{
+						if (Grid.Objects[cell, layer] != null && (pass < 2 || layer == (int)ObjectLayer.Building || layer == (int)ObjectLayer.FoundationTile
+							|| layer == (int)ObjectLayer.Backwall || layer == (int)ObjectLayer.Minion))
+						{
+							return false;
+						}
+					}
+				}
+			}
+			return true;
+		}
+
+		private static void Room(int x0, int floor, SimHashes walls, SimHashes back)
+		{
+			for (int y = floor - 2; y < floor + RoomHeight + 2; y++)
+			{
+				for (int x = x0 - 2; x < x0 + RoomWidth + 2; x++)
+				{
+					bool inside = x >= x0 && x < x0 + RoomWidth && y >= floor && y < floor + RoomHeight;
+					if (inside)
+					{
+						// A pool of water, 3 cells deep, under the ceiling light.
+						bool pool = x >= x0 + 10 && x < x0 + 18 && y < floor + 3;
+						Set(x, y, pool ? SimHashes.Water : SimHashes.Oxygen, pool ? 1000f : 1.8f);
+						Back(x, y, back);
+					}
+					else
+					{
+						Set(x, y, walls, 1000f);
+					}
+				}
+			}
+		}
+
+		private static void Carve()
+		{
+			Room(RoomA, Floor, SimHashes.SandStone, SimHashes.SandStone);
+			Room(RoomB, Floor, SimHashes.Katairite, SimHashes.Katairite);
+			Room(RoomC, FloorC, SimHashes.Granite, SimHashes.Granite);
+			// From room A through its right wall at the floor, then up a shaft beside it.
+			for (int x = RoomA + RoomWidth; x < RoomA + RoomWidth + 4; x++)
+			{
+				for (int y = Floor; y < Floor + 2; y++)
+				{
+					Set(x, y, SimHashes.Oxygen, 1.8f);
+					Back(x, y, SimHashes.SandStone);
+				}
+			}
+			for (int x = RoomA + RoomWidth + 2; x < RoomA + RoomWidth + 4; x++)
+			{
+				for (int y = Floor + 2; y < Floor + 8; y++)
+				{
+					Set(x, y, SimHashes.Oxygen, 1.8f);
+					Back(x, y, SimHashes.SandStone);
+				}
+			}
+			// Beyond room B's right wall: a pocket behind a window (the window is built later) and one behind the plain wall.
+			int pocket = RoomB + RoomWidth + 2;
+			for (int y = Floor + 3; y < Floor + 6; y++)
+			{
+				Set(pocket, y, SimHashes.Oxygen, 1.8f);
+			}
+			for (int y = Floor; y < Floor + 2; y++)
+			{
+				Set(pocket, y, SimHashes.Oxygen, 1.8f);
+			}
+			Set(RoomB + RoomWidth, Floor + 4, SimHashes.Oxygen, 1.8f);
+			Set(RoomB + RoomWidth + 1, Floor + 4, SimHashes.Oxygen, 1.8f);
+			// A closed cell for the shine bug.
+			for (int x = Bug - 1; x <= Bug + 1; x++)
+			{
+				for (int y = FloorC; y < FloorC + 4; y++)
+				{
+					Set(x, y, SimHashes.Oxygen, 1.8f);
+					Back(x, y, SimHashes.Granite);
+				}
+			}
+		}
+
+		private static GameObject Build(string id, int x, int y, SimHashes material)
+		{
+			BuildingDef def = Assets.GetBuildingDef(id);
+			GameObject go = def.Build(Cell(x, y), Orientation.Neutral, null, new[] { material.CreateTag() }, Warm, playsound: false, GameClock.Instance.GetTime());
+			return go;
+		}
+
+		private static void Furnish()
+		{
+			foreach ((int x0, int y0) in new[] { (RoomA, Floor), (RoomB, Floor), (RoomC, FloorC) })
+			{
+				lamps.Add(Build(CeilingLightConfig.ID, x0 + 13, y0 + RoomHeight - 1, SimHashes.Copper));
+				GameObject floor = Build(FloorLampConfig.ID, x0 + RoomWidth - 1, y0, SimHashes.Copper);
+				lamps.Add(floor);
+				if (x0 == RoomA && y0 == Floor) floorLampA = floor;
+				if (x0 == RoomB) floorLampB = floor;
+			}
+			Build(GlassTileConfig.ID, RoomB + RoomWidth, Floor + 4, SimHashes.Glass);
+			Build(GlassTileConfig.ID, RoomB + RoomWidth + 1, Floor + 4, SimHashes.Glass);
+			GameObject bug = Util.KInstantiate(Assets.GetPrefab("LightBug"), Grid.CellToPosCBC(Cell(Bug, FloorC + 1), Grid.SceneLayer.Creatures));
+			bug.SetActive(true);
+		}
+
+		private static void SwitchOn(GameObject lamp, bool on)
+		{
+			Light2D light = lamp == null ? null : lamp.GetComponent<Light2D>();
+			if (light != null)
+			{
+				light.autoRespondToOperational = false;
+				light.enabled = on;
+			}
+		}
+
+		private static int Light(int x, int y) => Grid.LightCount[Cell(x, y)];
+
+		private static unsafe void Native(int x, int y, out float direct, out float scattered)
+		{
+			float* v = stackalloc float[3];
+			LightNative.Cell(Cell(x, y), v);
+			direct = v[0];
+			scattered = v[1];
+		}
+
+		private static float Mean(int x0, int floor)
+		{
+			double sum = 0;
+			int n = 0;
+			for (int y = floor; y < floor + RoomHeight; y++)
+			{
+				for (int x = x0; x < x0 + RoomWidth; x++)
+				{
+					if (Grid.Element[Cell(x, y)].IsGas)
+					{
+						sum += Light(x, y);
+						n++;
+					}
+				}
+			}
+			return n > 0 ? (float)(sum / n) : 0f;
+		}
+
+		private static void Expect(string name, bool ok, string numbers)
+		{
+			if (ok) passed++;
+			else failed++;
+			Debug.Log($"{ModContext.Tag} LightCases: {name}: {(ok ? "ok" : "FAILED")} ({numbers})");
+		}
+
+		private static void FirstLook()
+		{
+			meanA = Mean(RoomA, Floor);
+			meanB = Mean(RoomB, Floor);
+			meanC = Mean(RoomC, FloorC);
+			Expect("light in the rooms", meanA > 100f && meanB > 50f && meanC > 50f, $"mean lux sandstone {meanA:F0}, abyssalite {meanB:F0}, granite {meanC:F0}");
+			Expect("a pale room is lighter than a dark one", meanA > meanB * 1.2f, $"sandstone {meanA:F0}, abyssalite {meanB:F0}");
+			// Water under the ceiling light: each cell down takes about 0.75 of the one above, times the falloff.
+			Native(RoomA + 13, Floor + 2, out float top, out _);
+			Native(RoomA + 13, Floor + 1, out float middle, out _);
+			Native(RoomA + 13, Floor, out float bottom, out _);
+			float ratio = top > 0f ? middle / top : 0f, ratio2 = middle > 0f ? bottom / middle : 0f;
+			Expect("water dims light by depth", ratio > 0.4f && ratio < 0.8f && ratio2 > 0.4f && ratio2 < 0.8f, $"direct {top:F0}, {middle:F0}, {bottom:F0}; ratios {ratio:F2}, {ratio2:F2}");
+			// Up the shaft beside room A: no direct light, some reflected.
+			int shaftX = RoomA + RoomWidth + 2;
+			float shaftDirect = 0f, shaftLight = 0f;
+			for (int y = Floor + 4; y < Floor + 8; y++)
+			{
+				Native(shaftX, y, out float d, out float s);
+				shaftDirect += d;
+				shaftLight += d + s;
+			}
+			Expect("light round the corner", shaftDirect < 1f && shaftLight > 1f, $"up the shaft: direct {shaftDirect:F1}, with reflected {shaftLight:F1}");
+			int pocket = RoomB + RoomWidth + 2;
+			Native(pocket, Floor + 4, out float window, out _);
+			int wall = Light(pocket, Floor) + Light(pocket, Floor + 1);
+			Expect("light through a window, none through a wall", window > 1f && wall == 0, $"behind the window direct {window:F0}, behind the wall {wall}");
+			// A shelf under room A's ceiling light: the cells under it go into shadow.
+			Native(RoomA + 13, Floor + 4, out shadowBefore, out _);
+			for (int x = RoomA + 12; x <= RoomA + 14; x++)
+			{
+				Set(x, Floor + RoomHeight - 3, SimHashes.Granite, 1000f);
+			}
+			probeA = Light(RoomA + 18, Floor + 2);
+			probeB = Light(RoomB + 18, Floor + 2);
+			SwitchOn(floorLampA, false);
+			// Drywall of sandstone over room C (granite back wall).
+			for (int y = FloorC; y < FloorC + RoomHeight; y++)
+			{
+				for (int x = RoomC; x < RoomC + RoomWidth; x++)
+				{
+					Build(ExteriorWallConfig.ID, x, y, SimHashes.SandStone);
+				}
+			}
+		}
+
+		private static void SecondLook()
+		{
+			Native(RoomA + 13, Floor + 4, out float shadow, out _);
+			Expect("a shelf casts a shadow", shadow < shadowBefore * 0.2f, $"direct under the shelf {shadowBefore:F0} before, {shadow:F0} after");
+			float lampOff = Light(RoomA + 18, Floor + 2);
+			Expect("a lamp switched off", lampOff < probeA * 0.6f, $"by the lamp {probeA:F0} on, {lampOff:F0} off");
+			float drywall = Mean(RoomC, FloorC);
+			Expect("drywall makes a room lighter", drywall > meanC * 1.03f, $"granite back wall {meanC:F0}, sandstone drywall {drywall:F0}");
+			SwitchOn(floorLampA, true);
+			if (floorLampB != null)
+			{
+				Util.KDestroyGameObject(floorLampB);
+			}
+		}
+
+		private static unsafe void LastLook()
+		{
+			float lampOn = Light(RoomA + 18, Floor + 2);
+			Expect("a lamp switched on again", Mathf.Abs(lampOn - probeA) <= Mathf.Max(3f, probeA * 0.05f), $"by the lamp {probeA:F0} at first, {lampOn:F0} again");
+			float removed = Light(RoomB + 18, Floor + 2);
+			Expect("a lamp removed", removed < probeB * 0.6f, $"by the lamp {probeB:F0}, {removed:F0} without it");
+			int bugLight = 0;
+			for (int x = Bug - 1; x <= Bug + 1; x++)
+			{
+				for (int y = FloorC; y < FloorC + 4; y++)
+				{
+					bugLight = Mathf.Max(bugLight, Light(x, y));
+				}
+			}
+			Debug.Log($"{ModContext.Tag} LightCases: the shine bug's cell: brightest {bugLight} lux (it glows when it wants to)");
+			float* check = stackalloc float[4];
+			LightNative.GridView view = LightGrid.View();
+			LightNative.Check(&view, originX, originY, originX + SiteWidth - 1, originY + SiteHeight - 1, check);
+			Expect("the light grid as a full computation", check[0] < 0.1f && check[1] <= 1f, $"largest difference: direct {check[0]:F3}, light grid {check[1]:F0} lux, " +
+				$"vs all reflected light at once {check[2]:F0} lux, over {check[3]:F0} cells");
+			CameraController.Instance.SnapTo(Grid.CellToPosCCC(Cell(SiteWidth / 2, SiteHeight / 2), Grid.SceneLayer.Background), 26f);
+		}
+
+		private static void Picture(string name)
+		{
+			foreach (ConfirmDialogScreen dialog in UnityEngine.Object.FindObjectsByType<ConfirmDialogScreen>(FindObjectsSortMode.None))
+			{
+				dialog.Deactivate();
+			}
+			string file = Path.Combine(ModContext.Folder, $"verify_light_{name}.png");
+			ScreenCapture.CaptureScreenshot(file);
+			Debug.Log($"{ModContext.Tag} LightCases: picture {name}: {file}");
+		}
+	}
+}

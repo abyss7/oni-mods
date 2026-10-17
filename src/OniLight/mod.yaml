@@ -1,0 +1,3 @@
+title: "OniLight"
+description: "Physical light: lamps light along straight rays that liquids dim by their own properties and windows let through, with a smooth falloff instead of a hard edge; walls, floors and back walls reflect light by their material, so it goes round corners and into doorways, and a pale room is brighter than a dark one under the same lamp. Ceiling lights light the half below them. The groundwork for a Blackout mode. Windows only (native library)."
+staticID: "abyss.OniLight"
