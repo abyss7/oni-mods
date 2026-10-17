@@ -315,9 +315,10 @@ namespace OniGasMix
 					verify = false;
 					return;
 				}
-				if (phase == 1)
+				if (phase == 1 || phase == 3)
 				{
-					// For the normal view too: the player may have opened the overlay with a gas selected.
+					// For the normal view too: the player may have opened the overlay with a gas selected. The second click is
+					// for a closed group: the first one opens it.
 					Click(verifyViews[view]);
 				}
 				else if (phase == VerifyFramesPerView - 5)
@@ -342,7 +343,12 @@ namespace OniGasMix
 		{
 			object menu = Traverse.Create(OverlayLegend.Instance).Field("filterMenu").GetValue();
 			IDictionary widgets = menu == null ? null : Traverse.Create(menu).Field("widgets").GetValue() as IDictionary;
-			if (widgets == null || !widgets.Contains(key))
+			if (widgets != null && !widgets.Contains(key) && widgets.Contains("ONIMIXTUREGROUPGAS"))
+			{
+				// The group's list is closed: its title opens it, and the menu is rebuilt on the next frame; the caller clicks again.
+				key = "ONIMIXTUREGROUPGAS";
+			}
+			else if (widgets == null || !widgets.Contains(key))
 			{
 				throw new InvalidOperationException("no legend toggle named " + key);
 			}

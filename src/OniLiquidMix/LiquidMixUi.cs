@@ -386,8 +386,9 @@ namespace OniLiquidMix
 					Debug.Log($"{ModContext.Tag} liquid overlay verify: {Sample()}");
 					OverlayScreen.Instance.ToggleOverlay(OverlayModes.Oxygen.ID, allowSound: false);
 				}
-				else if (frame == 10)
+				else if (frame == 10 || frame == 12)
 				{
+					// The second click is for a closed group: the first one opens it.
 					Click(KeyOf(ElementLoader.FindElementByHash(SimHashes.Water)));
 				}
 				else if (frame == VerifyFrames / 2)
@@ -416,7 +417,12 @@ namespace OniLiquidMix
 		{
 			object menu = Traverse.Create(OverlayLegend.Instance).Field("filterMenu").GetValue();
 			IDictionary widgets = menu == null ? null : Traverse.Create(menu).Field("widgets").GetValue() as IDictionary;
-			if (widgets == null || !widgets.Contains(key))
+			if (widgets != null && !widgets.Contains(key) && widgets.Contains("ONIMIXTUREGROUPLIQUID"))
+			{
+				// The group's list is closed: its title opens it, and the menu is rebuilt on the next frame; the caller clicks again.
+				key = "ONIMIXTUREGROUPLIQUID";
+			}
+			else if (widgets == null || !widgets.Contains(key))
 			{
 				throw new InvalidOperationException("no legend toggle named " + key);
 			}

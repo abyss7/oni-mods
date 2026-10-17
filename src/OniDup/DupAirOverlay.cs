@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using HarmonyLib;
 using OniCommon;
 using UnityEngine;
@@ -8,9 +10,10 @@ namespace OniDup
 {
 	/// <summary>
 	/// "Breathing Conditions" view in the oxygen overlay (shared mixtures interface, src/Common/MixtureUi.cs): right under the game's
-	/// "Breathable", it colours the air by the zones of DupAir with the same colour scale: from the best green at a normal
-	/// Oxygen pressure down through thin air, lightheaded and gasping for air to unbreathable red, and darker red for a vacuum
-	/// where body fluids boil; Carbon Dioxide shows as the matching step down the scale, too much Oxygen in yellow and orange.
+	/// "Breathable", it colours the air by the zones of DupAir: Oxygen on the game's colour scale, from the best green at a
+	/// normal pressure down through thin air, lightheaded and gasping for air to unbreathable red; a vacuum where body fluids
+	/// boil in deep blue; too much Oxygen in yellow and orange; Carbon Dioxide on its own purple scale, from stuffy air to a
+	/// blackout, wherever it harms at least as much as the Oxygen there.
 	/// Each cell is shown by its own air (as if a Duplicant without a mask breathed it).
 	/// </summary>
 	internal static class DupAirOverlay
@@ -32,6 +35,101 @@ namespace OniDup
 				["colour"] = (Func<int, Color>)Colour,
 				["legend"] = (Func<List<LegendEntry>>)Legend,
 			});
+			if (File.Exists(Path.Combine(ModContext.Folder, "verify_dup_overlay.txt")))
+			{
+				harmony.Patch(AccessTools.Method(typeof(Game), "LateUpdate"), postfix: new HarmonyMethod(typeof(DupAirOverlay), nameof(VerifyStep)));
+			}
+		}
+
+		// ---------- Self-check: the file verify_dup_overlay.txt in the mod folder ----------
+		// A while after loading, the overlay is opened over the colony and pictured three times: as it opens (the substance
+		// groups closed), with the gases group opened, and with this view selected.
+
+		private static int verifyFrame = -1;
+		private static float verifyStart = -1f;
+
+		private static void VerifyStep()
+		{
+			if (verifyFrame > 200 || OverlayScreen.Instance == null || GameClock.Instance == null)
+			{
+				return;
+			}
+			if (verifyStart < 0f)
+			{
+				verifyStart = GameClock.Instance.GetTime();
+				return;
+			}
+			if (GameClock.Instance.GetTime() < verifyStart + 20f)
+			{
+				return;
+			}
+			try
+			{
+				int frame = ++verifyFrame;
+				if (frame == 0)
+				{
+					CameraController.Instance.SnapTo(ColonyCentre(), 14f);
+					OverlayScreen.Instance.ToggleOverlay(OverlayModes.Oxygen.ID, allowSound: false);
+				}
+				else if (frame == 30)
+				{
+					Picture("closed");
+					Click("ONIMIXTUREGROUPGAS");
+				}
+				else if (frame == 60)
+				{
+					Picture("gases");
+					Click(Key);
+				}
+				else if (frame == 120)
+				{
+					Picture("breathing");
+					Click(MixtureUi.BaseKey);
+					OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
+					verifyFrame = 1000;
+				}
+			}
+			catch (Exception e)
+			{
+				verifyFrame = 1000;
+				Debug.LogWarning($"{ModContext.Tag} overlay verify stopped after an error: {e}");
+			}
+		}
+
+		private static Vector3 ColonyCentre()
+		{
+			Vector3 sum = Vector3.zero;
+			int count = 0;
+			foreach (MinionIdentity dupe in Components.LiveMinionIdentities.Items)
+			{
+				if (dupe != null && dupe.GetMyWorldId() == ClusterManager.Instance.activeWorldId)
+				{
+					sum += dupe.transform.GetPosition();
+					count++;
+				}
+			}
+			return count > 0 ? sum / count : CameraController.Instance.transform.GetPosition();
+		}
+
+		private static void Picture(string name)
+		{
+			string file = Path.Combine(ModContext.Folder, $"verify_dup_overlay_{name}.png");
+			ScreenCapture.CaptureScreenshot(file);
+			object menu = Traverse.Create(OverlayLegend.Instance).Field("filterMenu").GetValue();
+			IDictionary widgets = menu == null ? null : Traverse.Create(menu).Field("widgets").GetValue() as IDictionary;
+			Debug.Log($"{ModContext.Tag} overlay verify: {name}, switches in the list {widgets?.Count ?? 0}, view {current ?? "normal"}, file {file}");
+		}
+
+		private static void Click(string key)
+		{
+			object menu = Traverse.Create(OverlayLegend.Instance).Field("filterMenu").GetValue();
+			IDictionary widgets = menu == null ? null : Traverse.Create(menu).Field("widgets").GetValue() as IDictionary;
+			if (widgets == null || !widgets.Contains(key))
+			{
+				throw new InvalidOperationException("no legend toggle named " + key);
+			}
+			GameObject widget = Traverse.Create(widgets[key]).Field("gameObject").GetValue<GameObject>();
+			widget.GetComponentInChildren<MultiToggle>().onClick();
 		}
 
 		/// <summary>Called by the game from worker threads for each visible cell.</summary>
@@ -44,12 +142,20 @@ namespace OniDup
 			DupAir.Air air = DupAir.CellAir(cell);
 			if (air.Pressure < DupAir.Vapour)
 			{
-				return VacuumColour();
+				return VacuumColour;
 			}
 			float oxygen = DupAir.Lungs(air);
-			if (oxygen < DupAir.Severe || air.CarbonDioxide >= DupAir.PassingOut)
+			if (oxygen < DupAir.Severe)
 			{
-				return SimDebugView.Instance.unbreathableColour;
+				return SimDebugView.Instance.unbreathableColour; // the breath is held: Carbon Dioxide does not matter
+			}
+			// Oxygen and Carbon Dioxide on a common scale of harm; the worse shows, Carbon Dioxide when they are equal.
+			int oxygenHarm = oxygen >= DupAir.OxygenToxic ? 3 : oxygen >= DupAir.OxygenRich ? 1
+				: oxygen >= DupAir.Normal ? 0 : oxygen >= DupAir.Thin ? 1 : oxygen >= DupAir.Hypoxic ? 2 : 3;
+			int carbon = CarbonLevel(air.CarbonDioxide);
+			if (carbon > 0 && carbon >= oxygenHarm)
+			{
+				return CarbonColours[carbon - 1];
 			}
 			if (oxygen >= DupAir.OxygenToxic)
 			{
@@ -59,18 +165,23 @@ namespace OniDup
 			{
 				return RichColour;
 			}
-			// Carbon Dioxide takes the colour of the matching step down the scale: stuffy air as thin air, a headache as
-			// lightheaded, poisoning as gasping for air; the worse of the two shows.
-			float level = Level(oxygen);
-			float carbon = air.CarbonDioxide;
-			if (carbon >= DupAir.Poisoning) level = Mathf.Min(level, Middle(DupAir.Hypoxic, DupAir.Severe));
-			else if (carbon >= DupAir.Headache) level = Mathf.Min(level, Middle(DupAir.Thin, DupAir.Hypoxic));
-			else if (carbon >= DupAir.Stuffy) level = Mathf.Min(level, Middle(DupAir.Normal, DupAir.Thin));
-			return SimDebugView.Instance.breathableGradient.Evaluate(level);
+			return Scale(oxygen);
+		}
+
+		private static int CarbonLevel(float kPa)
+		{
+			return kPa >= DupAir.PassingOut ? 4 : kPa >= DupAir.Poisoning ? 3 : kPa >= DupAir.Headache ? 2 : kPa >= DupAir.Stuffy ? 1 : 0;
 		}
 
 		// Above the normal pressure: the colours of the game's oxygen overlay legend for harmful air (yellow, then orange).
 		private static readonly Color RichColour = new Color(0.95f, 0.85f, 0.3f, 1f), ToxicColour = new Color(0.95f, 0.5f, 0.15f, 1f);
+		// A vacuum: the deep blue of space, apart from the red of air without Oxygen.
+		private static readonly Color VacuumColour = new Color(0.12f, 0.18f, 0.45f, 1f);
+		// Carbon Dioxide on its own scale, from light lavender (stuffy air) to deep purple (a blackout).
+		private static readonly Color[] CarbonColours =
+		{
+			new Color(0.78f, 0.66f, 0.95f, 1f), new Color(0.66f, 0.45f, 0.92f, 1f), new Color(0.52f, 0.26f, 0.80f, 1f), new Color(0.36f, 0.10f, 0.58f, 1f),
+		};
 
 		/// <summary>Place on the game's breathable gradient: from the lowest breathable zone (pO2 6 kPa) to normal air (15 kPa).</summary>
 		private static float Level(float oxygen)
@@ -78,25 +189,14 @@ namespace OniDup
 			return Mathf.Clamp01((oxygen - DupAir.Severe) / (DupAir.Normal - DupAir.Severe));
 		}
 
-		private static float Middle(float high, float low)
-		{
-			return Level((high + low) / 2f);
-		}
-
 		private static Color Scale(float oxygen)
 		{
 			return SimDebugView.Instance.breathableGradient.Evaluate(Level(oxygen));
 		}
 
-		private static Color VacuumColour()
-		{
-			Color red = SimDebugView.Instance.unbreathableColour;
-			return new Color(red.r * 0.55f, red.g * 0.55f, red.b * 0.55f, 1f);
-		}
-
 		private static List<LegendEntry> Legend()
 		{
-			// Each band shows the colour of its middle.
+			// Each band of the Oxygen scale shows the colour of its middle.
 			return new List<LegendEntry>
 			{
 				new LegendEntry(ONIDUP.OVERLAY.TOXIC, ONIDUP.OVERLAY.TOXIC_TOOLTIP, ToxicColour),
@@ -106,7 +206,11 @@ namespace OniDup
 				new LegendEntry(ONIDUP.OVERLAY.LIGHTHEADED, ONIDUP.OVERLAY.LIGHTHEADED_TOOLTIP, Scale((DupAir.Thin + DupAir.Hypoxic) / 2f)),
 				new LegendEntry(ONIDUP.OVERLAY.GASPING, ONIDUP.OVERLAY.GASPING_TOOLTIP, Scale((DupAir.Hypoxic + DupAir.Severe) / 2f)),
 				new LegendEntry(ONIDUP.OVERLAY.UNBREATHABLE, ONIDUP.OVERLAY.UNBREATHABLE_TOOLTIP, SimDebugView.Instance.unbreathableColour),
-				new LegendEntry(ONIDUP.OVERLAY.VACUUM, ONIDUP.OVERLAY.VACUUM_TOOLTIP, VacuumColour()),
+				new LegendEntry(ONIDUP.OVERLAY.VACUUM, ONIDUP.OVERLAY.VACUUM_TOOLTIP, VacuumColour),
+				new LegendEntry(ONIDUP.OVERLAY.STUFFY, ONIDUP.OVERLAY.STUFFY_TOOLTIP, CarbonColours[0]),
+				new LegendEntry(ONIDUP.OVERLAY.HEADACHE, ONIDUP.OVERLAY.HEADACHE_TOOLTIP, CarbonColours[1]),
+				new LegendEntry(ONIDUP.OVERLAY.POISONING, ONIDUP.OVERLAY.POISONING_TOOLTIP, CarbonColours[2]),
+				new LegendEntry(ONIDUP.OVERLAY.BLACKOUT, ONIDUP.OVERLAY.BLACKOUT_TOOLTIP, CarbonColours[3]),
 			};
 		}
 	}

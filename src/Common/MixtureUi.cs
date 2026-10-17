@@ -280,8 +280,8 @@ namespace OniCommon
 		}
 
 		/// <summary>
-		/// Before the overlay is turned on, builds the selection list: the normal view, then the providers' groups. Each group has its own
-		/// title: a switch that cannot be pressed. With no selection in any group the overlay stays as in the game.
+		/// Before the overlay is turned on, builds the selection list: the normal view and the views of the whole air, then the
+		/// providers' groups. With no selection in any group the overlay stays as in the game.
 		/// </summary>
 		private static void BuildChoice(OverlayModes.Oxygen __instance)
 		{
@@ -300,51 +300,8 @@ namespace OniCommon
 						return;
 					}
 				}
-				var toggles = new List<ToolParameterMenu.ToggleData>();
-				AddString(BaseKey, STRINGS.MISC.TAGS.BREATHABLE, STRINGS.UI.OVERLAYS.OXYGEN.TOOLTIPS.LEGEND2);
-				Dictionary<string, object> stillActive = null;
-				// Views of the whole air first, right under the normal view; then the groups of substances.
-				var ordered = new List<Dictionary<string, object>>(providers.FindAll(provider => IsFlat(provider)));
-				ordered.AddRange(providers.FindAll(provider => !IsFlat(provider)));
-				foreach (Dictionary<string, object> provider in ordered)
-				{
-					List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
-					if (choices == null || choices.Count == 0)
-					{
-						continue;
-					}
-					string id = (string)provider["id"];
-					string current = Get<Func<string>>(provider, "current")?.Invoke();
-					if (!IsFlat(provider))
-					{
-						string heading = "ONIMIXTUREGROUP" + id.ToUpperInvariant();
-						// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals and dashes.
-						string title = Text(provider, "title") ?? id;
-						AddString(heading, "— " + title.ToUpper() + " —", title);
-						toggles.Add(new ToolParameterMenu.ToggleData(heading, ToolParameterMenu.ToggleState.Disabled));
-						choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
-					}
-					bool found = false;
-					foreach (string[] choice in choices)
-					{
-						AddString(choice[0], choice[1], choice[2]);
-						bool on = choice[0] == current;
-						found = found || on;
-						toggles.Add(new ToolParameterMenu.ToggleData(choice[0], on ? ToolParameterMenu.ToggleState.On : ToolParameterMenu.ToggleState.Off));
-					}
-					if (found && stillActive == null)
-					{
-						stillActive = provider;
-					}
-					else if (current != null)
-					{
-						// The group's selection is gone (or something is selected in another group): the group returns to the normal view.
-						Get<Action<string>>(provider, "select")?.Invoke(null);
-					}
-				}
-				active = stillActive;
-				toggles.Insert(0, new ToolParameterMenu.ToggleData(BaseKey, active == null ? ToolParameterMenu.ToggleState.On : ToolParameterMenu.ToggleState.Off));
-				__instance.legendFilters = toggles.Count > 1 ? toggles.ToArray() : null;
+				ToolParameterMenu.ToggleData[] toggles = BuildToggles();
+				__instance.legendFilters = toggles.Length > 1 ? toggles : null;
 				// The legend builds a selection list only for overlays marked as "filled from code" (like the temperature one).
 				List<OverlayLegend.OverlayInfo> infos = OverlayLegend.Instance == null ? null
 					: Traverse.Create(OverlayLegend.Instance).Field<List<OverlayLegend.OverlayInfo>>("overlayInfoList").Value;
@@ -371,6 +328,96 @@ namespace OniCommon
 			}
 		}
 
+		private const string HeadingPrefix = "ONIMIXTUREGROUP";
+		private static string expanded; // id of the group whose list is open; one at a time
+		private static readonly Dictionary<string, string> groupOfHeading = new Dictionary<string, string>();
+
+		/// <summary>
+		/// The switches of the list. A group of substances shows only its title, "+ GASES", until it is clicked; then its
+		/// substances open under it ("– GASES") and the other group closes. The group with the current selection is open.
+		/// </summary>
+		private static ToolParameterMenu.ToggleData[] BuildToggles()
+		{
+			var toggles = new List<ToolParameterMenu.ToggleData>();
+			AddString(BaseKey, STRINGS.MISC.TAGS.BREATHABLE, STRINGS.UI.OVERLAYS.OXYGEN.TOOLTIPS.LEGEND2);
+			Dictionary<string, object> stillActive = null;
+			// Views of the whole air first, right under the normal view; then the groups of substances.
+			var ordered = new List<Dictionary<string, object>>(providers.FindAll(provider => IsFlat(provider)));
+			ordered.AddRange(providers.FindAll(provider => !IsFlat(provider)));
+			foreach (Dictionary<string, object> provider in ordered)
+			{
+				List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
+				if (choices == null || choices.Count == 0)
+				{
+					continue;
+				}
+				string id = (string)provider["id"];
+				string current = Get<Func<string>>(provider, "current")?.Invoke();
+				bool flat = IsFlat(provider);
+				if (!flat && current != null && choices.Exists(choice => choice[0] == current))
+				{
+					expanded = id;
+				}
+				bool open = flat || expanded == id;
+				if (!flat)
+				{
+					string heading = HeadingPrefix + id.ToUpperInvariant();
+					groupOfHeading[heading] = id;
+					// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals.
+					string title = Text(provider, "title") ?? id;
+					AddString(heading, (open ? "– " : "+ ") + title.ToUpper(), title);
+					toggles.Add(new ToolParameterMenu.ToggleData(heading, ToolParameterMenu.ToggleState.Off));
+					choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
+				}
+				bool found = false;
+				foreach (string[] choice in choices)
+				{
+					AddString(choice[0], choice[1], choice[2]);
+					bool on = choice[0] == current;
+					found = found || on;
+					if (open)
+					{
+						toggles.Add(new ToolParameterMenu.ToggleData(choice[0], on ? ToolParameterMenu.ToggleState.On : ToolParameterMenu.ToggleState.Off));
+					}
+				}
+				if (found && stillActive == null)
+				{
+					stillActive = provider;
+				}
+				else if (current != null)
+				{
+					// The group's selection is gone (or something is selected in another group): the group returns to the normal view.
+					Get<Action<string>>(provider, "select")?.Invoke(null);
+				}
+			}
+			active = stillActive;
+			toggles.Insert(0, new ToolParameterMenu.ToggleData(BaseKey, active == null ? ToolParameterMenu.ToggleState.On : ToolParameterMenu.ToggleState.Off));
+			return toggles.ToArray();
+		}
+
+		/// <summary>A group title was clicked: its list opens or closes; the selection stays as it was.</summary>
+		private static void ToggleGroup(OverlayModes.Mode mode, string heading)
+		{
+			string id = groupOfHeading[heading];
+			expanded = expanded == id ? null : id;
+			mode.legendFilters = BuildToggles();
+			// The menu is rebuilt on the next frame, outside its own click handler.
+			UIScheduler.Instance.Schedule("MixtureUi.ToggleGroup", 0f, _ =>
+			{
+				OverlayLegend legend = OverlayLegend.Instance;
+				if (legend == null || !ReferenceEquals(Traverse.Create(legend).Field("currentMode").GetValue(), mode))
+				{
+					return;
+				}
+				var menu = Traverse.Create(legend).Field("filterMenu").GetValue() as ToolParameterMenu;
+				if (menu != null)
+				{
+					menu.PopulateMenu(mode.legendFilters);
+					Traverse.Create(legend).Method("ConfigureUIHeight").GetValue();
+				}
+			});
+		}
+
 		private static bool IsFlat(Dictionary<string, object> provider)
 		{
 			return provider.TryGetValue("flat", out object flat) && flat is bool on && on;
@@ -385,6 +432,11 @@ namespace OniCommon
 			string chosen = null;
 			foreach (ToolParameterMenu.ToggleData toggle in ___currentMode.legendFilters)
 			{
+				if (toggle.IsOn && toggle.name.StartsWith(HeadingPrefix) && groupOfHeading.ContainsKey(toggle.name))
+				{
+					ToggleGroup(___currentMode, toggle.name);
+					return;
+				}
 				if (toggle.IsOn && toggle.name != BaseKey)
 				{
 					chosen = toggle.name;
