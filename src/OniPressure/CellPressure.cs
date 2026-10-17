@@ -1,4 +1,5 @@
 using System;
+using OniCommon;
 
 namespace OniPressure
 {
@@ -19,7 +20,8 @@ namespace OniPressure
 		/// <summary>
 		/// Partial pressure of a gas for other mods, without a reference to this one (they find it in the application domain
 		/// data): element index, mass in the cell (kg), temperature (K) to kPa, by this mod's setting: by mass (1.8 kg of any gas
-		/// is one atmosphere) or by molecules (n R T in one cubic metre, with the game's molar masses), as the phase rules count.
+		/// is one atmosphere) or by molecules (n R T in one cubic metre, with the molecules' molar masses, see MolarMasses), as
+		/// the phase rules count.
 		/// </summary>
 		internal const string SharedKey = "OniMods.PressureScale.1";
 
@@ -31,7 +33,7 @@ namespace OniPressure
 				{
 					return mass / 1.8f * 101.325f;
 				}
-				float molar = element < ElementLoader.elements.Count ? ElementLoader.elements[element].molarMass : 0f;
+				float molar = element < ElementLoader.elements.Count ? MolarMasses.Real(ElementLoader.elements[element]) : 0f;
 				return molar > 0f ? mass / molar * 8.314462f * temperature : 0f;
 			}));
 		}

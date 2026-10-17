@@ -26,7 +26,7 @@ def step_times(text):
 variants = [line.split()[1] for line in lines + plain_lines if line.startswith("variant")]
 same = numbers(lines) == numbers(plain_lines)
 native = {}
-grid = regions = leaked = heat = hole = room = passive = colony = None
+grid = regions = leaked = heat = hole = room = passive = colony = pressure = convection = None
 for line in lines:
     parts = line.split()
     if parts[0] == "column":
@@ -47,6 +47,10 @@ for line in lines:
         colony = dict(zip(parts[1::2], parts[2::2]))
     elif parts[0] == "passive":
         passive = dict(zip(parts[1::2], map(float, parts[2::2])))
+    elif parts[0] == "pressure":
+        pressure = dict(zip(parts[1::2], parts[2::2]))
+    elif parts[0] == "convection":
+        convection = dict(zip(parts[1::2], map(float, parts[2::2])))
 
 cells = [{"H2": 0.09, "O2": 1.11, "CO2": 0.6} for _ in range(10)]
 worst = 0.0
@@ -89,6 +93,17 @@ ok = ok and 238.0 < passive["per_kg_least"] < passive["per_kg_most"] < 333.4 and
 # Transfer by a cell list after the step gives the same numbers as transfer inside the step.
 ok = ok and passive["listed_different"] == 0
 print(f"passenger: sum {passive['sum_before']:.1f} -> {passive['sum_after']:.1f}, per kilogram of gas from {passive['per_kg_least']:.2f} to {passive['per_kg_most']:.2f}, disabled field changed in {passive['idle_changed']:.0f} cells")
+# Pressure mode: by mass, Hydrogen and Oxygen end with equal masses and pressures differing many times; by pressure the
+# pressures even out (only the weight of the column remains), mass is conserved, and the Hydrogen gathers at the top.
+p_mass, p_pressure = float(pressure["spread_by_mass"]), float(pressure["spread_by_pressure"])
+ok = ok and p_mass > 4.0 and p_pressure < 1.15 and abs(float(pressure["drift_by_mass"])) < 1e-5 and abs(float(pressure["drift_by_pressure"])) < 1e-5
+print(f"pressure mode: pressure spread across the room by mass {p_mass:.2f}x, by pressure {p_pressure:.3f}x; mass drift {pressure['drift_by_pressure']}; share of the Hydrogen in the top row {float(pressure['hydrogen_top_by_pressure']) * 100:.0f}%")
+# Convection: warm below, cold above. By pressure the warm gas expands upwards and the cold sinks, so the difference between
+# the bottom and the top shrinks faster than by mass (diffusion only). Heat is conserved.
+gap_mass = convection["bottom_by_mass"] - convection["top_by_mass"]
+gap_pressure = convection["bottom_by_pressure"] - convection["top_by_pressure"]
+ok = ok and gap_pressure < gap_mass - 5.0 and abs(convection["heat_drift_by_pressure"]) < 1e-4 and abs(convection["heat_drift_by_mass"]) < 1e-4
+print(f"convection: top / bottom after 10 min by mass {convection['top_by_mass']:.1f} / {convection['bottom_by_mass']:.1f} K, by pressure {convection['top_by_pressure']:.1f} / {convection['bottom_by_pressure']:.1f} K")
 ok = ok and same and variants[1] == "sse2"
 fast, slow = step_times(lines), step_times(plain_lines)
 print(f"step variants: {variants[0]} and {variants[1]}, numbers {'matched' if same else 'DIVERGED'}; step over regions {fast['regions']} and {slow['regions']} ms, over the whole grid {fast['grid']} and {slow['grid']} ms")

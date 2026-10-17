@@ -243,9 +243,10 @@ namespace OniGasMix
 			}
 			Element gas = ElementLoader.elements[element];
 			gasColour = MixtureUi.Bright(gas);
-			perMolar = gas.molarMass > 0f ? 1f / gas.molarMass : 1f;
+			float molar = MolarMasses.Of(gas);
+			perMolar = molar > 0f ? 1f / molar : 1f;
 			// A cell fades out when it has fewer molecules than FadeBelow kilograms of Oxygen.
-			fadeScale = ElementLoader.FindElementByHash(SimHashes.Oxygen).molarMass / FadeBelow;
+			fadeScale = MolarMasses.Of(ElementLoader.FindElementByHash(SimHashes.Oxygen)) / FadeBelow;
 			if (field != null)
 			{
 				Array.Clear(field, Header, field.Length - Header);

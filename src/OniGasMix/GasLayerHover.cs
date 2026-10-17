@@ -133,13 +133,14 @@ namespace OniGasMix
 					}
 					Element element = ElementLoader.elements[index];
 					float mass = index == mainIndex ? mainMass : BitConverter.ToSingle(buffer, Header + i * 8 + 4);
-					if (!(mass > 0f) || !(element.molarMass > 0f))
+					float molar = MolarMasses.Of(element);
+					if (!(mass > 0f) || !(molar > 0f))
 					{
 						continue;
 					}
-					gases.Add(new Gas { element = element, mass = mass, molecules = mass / element.molarMass });
+					gases.Add(new Gas { element = element, mass = mass, molecules = mass / molar });
 					totalMass += mass;
-					totalMolecules += mass / element.molarMass;
+					totalMolecules += mass / molar;
 					if (index != mainIndex)
 					{
 						otherMass += mass;

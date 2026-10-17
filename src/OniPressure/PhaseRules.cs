@@ -125,7 +125,7 @@ namespace OniPressure
 			bool on = false;
 			byte[] settings = Settings();
 			string scale = Mod.Options.PressureByMass ? "pressure by gas mass" : "pressure by molecules";
-			if (!SimHooks.SendData("pressure.elements", ElementRecords.Build(element => false)) || !SimHooks.SendData("pressure.phase-config", settings))
+			if (!SimHooks.SendData("pressure.elements", ElementRecords.Build(element => false, Mod.Options.PressureByMass ? (Func<Element, float>)null : MolarMasses.Real)) || !SimHooks.SendData("pressure.phase-config", settings))
 			{
 				Mode = "off: the plugin rejected the element table or the settings";
 			}

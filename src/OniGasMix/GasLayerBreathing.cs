@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection.Emit;
 using HarmonyLib;
 using Klei.AI;
 using TUNING;
@@ -81,12 +82,15 @@ namespace OniGasMix
 				postfix: new HarmonyMethod(typeof(GasLayerBreathing), nameof(AfterBreath)));
 			harmony.Patch(AccessTools.Method(typeof(HoverTextHelper), nameof(HoverTextHelper.MassStringsReadOnly)),
 				postfix: new HarmonyMethod(typeof(GasLayerBreathing), nameof(BreathableLabel)));
+			harmony.Patch(AccessTools.Method(typeof(CellSelectionObject), nameof(CellSelectionObject.UpdateValues)),
+				transpiler: new HarmonyMethod(typeof(GasLayerBreathing), nameof(PanelMassRead)));
 		}
 
 		/// <summary>The game is loaded or started: previous duplicants and the array are no longer valid.</summary>
 		internal static void GameLoaded()
 		{
 			active = false;
+			byMolecules = MolarMasses.ByMolecules;
 			breaths.Clear();
 			takenFromMain.Clear();
 			breathableElement = null;
@@ -266,7 +270,7 @@ namespace OniGasMix
 					// later removes the same amount from the cell.
 					byte germ = Grid.DiseaseIdx[bestCell];
 					int germs = 0;
-					float mixture = Grid.Mass[bestCell];
+					float mixture = GasMixture.RealTotal(bestCell);
 					if (germ != byte.MaxValue && Grid.DiseaseCount[bestCell] > 0 && mixture > 0f)
 					{
 						germs = (int)(Grid.DiseaseCount[bestCell] * Mathf.Clamp01(other / mixture));
@@ -381,6 +385,68 @@ namespace OniGasMix
 				label = " " + GameUtil.GetBreathableString(shownAs, mass);
 			}
 			__result[3] = label;
+			// By molecules the game sees a gas cell's mass as its pressure (the mass of Oxygen giving the same pressure); the
+			// cursor tooltip shows the real mass of the gas.
+			if (byMolecules && element.IsGas)
+			{
+				FormatMass(GasMixture.RealTotal(cell), __result);
+			}
+		}
+
+		private static bool byMolecules;
+
+		/// <summary>The game's mass text (number, decimal, unit), as in HoverTextHelper.MassStringsReadOnly.</summary>
+		private static void FormatMass(float mass, string[] strings)
+		{
+			strings[2] = STRINGS.UI.UNITSUFFIXES.MASS.KILOGRAM;
+			if (mass < 5f)
+			{
+				mass *= 1000f;
+				strings[2] = STRINGS.UI.UNITSUFFIXES.MASS.GRAM;
+			}
+			if (mass < 5f)
+			{
+				mass *= 1000f;
+				strings[2] = STRINGS.UI.UNITSUFFIXES.MASS.MILLIGRAM;
+			}
+			if (mass < 5f)
+			{
+				mass *= 1000f;
+				strings[2] = STRINGS.UI.UNITSUFFIXES.MASS.MICROGRAM;
+				mass = Mathf.Floor(mass);
+			}
+			int whole = Mathf.FloorToInt(mass);
+			int tenths = Mathf.RoundToInt(10f * (mass - whole));
+			if (tenths == 10)
+			{
+				whole++;
+				tenths = 0;
+			}
+			strings[0] = whole.ToString();
+			strings[1] = "." + tenths;
+		}
+
+		/// <summary>The selected cell panel reads the cell mass once: for a gas cell it gets the real mass (see BreathableLabel).</summary>
+		private static IEnumerable<CodeInstruction> PanelMassRead(IEnumerable<CodeInstruction> instructions)
+		{
+			List<CodeInstruction> code = new List<CodeInstruction>(instructions);
+			System.Reflection.FieldInfo massField = AccessTools.Field(typeof(Grid), nameof(Grid.Mass));
+			int at = code.FindIndex(instruction => instruction.opcode == OpCodes.Ldsflda && Equals(instruction.operand, massField));
+			int call = at < 0 ? -1 : code.FindIndex(at, instruction => instruction.opcode == OpCodes.Call && instruction.operand is System.Reflection.MethodInfo getter && getter.Name == "get_Item");
+			if (at < 0 || call < 0 || call - at > 4)
+			{
+				Debug.LogWarning("[OniGasMix] the cell mass read was not found in the selected cell panel; it shows the mass the game sees");
+				return code;
+			}
+			code[at].opcode = OpCodes.Nop;
+			code[at].operand = null;
+			code[call] = new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(GasLayerBreathing), nameof(PanelMass)));
+			return code;
+		}
+
+		private static float PanelMass(int cell)
+		{
+			return byMolecules && Grid.IsValidCell(cell) && Grid.Element[cell].IsGas ? GasMixture.RealTotal(cell) : Grid.Mass[cell];
 		}
 
 		/// <summary>

@@ -384,5 +384,96 @@ int main(int argc, char** argv)
 		}
 		printf("room layering_difference %.3g horizontal_unevenness %.3g\n", worst, uneven);
 	}
+	{
+		// Pressure mode (the pressure mod's "by molecules"), with the real molar masses of Hydrogen and Oxygen. A closed room
+		// 12 x 6: Hydrogen on the left, 0.5 kg per cell (about 8 times the pressure of the Oxygen at the reference
+		// temperature), Oxygen on the right, 1.8 kg per cell. By mass the cells end with equal masses and very different
+		// pressures; by pressure the pressures even out (up to the weight of the gas column), and the Hydrogen takes far less
+		// mass per cell. Mass is conserved in both modes.
+		const std::vector<float> real = { 2.016f, 31.998f, 44.01f };
+		const int W = 14, H = 8;
+		double spread[2] = { 0, 0 }, drift[2] = { 0, 0 }, hydrogenShare[2] = { 0, 0 };
+		unsigned long long bits[2] = { 0, 0 };
+		for (int mode = 0; mode < 2; mode++)
+		{
+			GasMixKernel kernel;
+			kernel.Reset(W, H, real);
+			kernel.ForcePlain(plain);
+			GasMixParams local = params;
+			local.byPressure = mode;
+			double before = 0;
+			for (int y = 1; y < H - 1; y++) for (int x = 1; x < W - 1; x++)
+			{
+				const int i = y * W + x;
+				kernel.Open()[i] = 1.0f;
+				if (x < W / 2) kernel.Mass(0)[i] = 0.5f; else kernel.Mass(1)[i] = 1.8f;
+				before += kernel.Mass(0)[i] + kernel.Mass(1)[i];
+			}
+			for (int tick = 0; tick < 6000; tick++)
+			{
+				for (int i = 0; i < W * H; i++) kernel.Temperature()[i] = 293.15f;
+				kernel.Step(local);
+			}
+			double after = 0, least = 1e30, most = 0, hydrogenTop = 0, hydrogen = 0;
+			for (int y = 1; y < H - 1; y++) for (int x = 1; x < W - 1; x++)
+			{
+				const int i = y * W + x;
+				after += kernel.Mass(0)[i] + kernel.Mass(1)[i];
+				const double eq = kernel.Mass(0)[i] * (31.998 / 2.016) + kernel.Mass(1)[i];
+				least = eq < least ? eq : least;
+				most = eq > most ? eq : most;
+				hydrogen += kernel.Mass(0)[i];
+				if (y == H - 2) hydrogenTop += kernel.Mass(0)[i];
+			}
+			spread[mode] = most / least;
+			drift[mode] = (after - before) / before;
+			hydrogenShare[mode] = hydrogenTop / hydrogen;
+			bits[mode] = Bits(kernel, 2);
+		}
+		printf("pressure spread_by_mass %.4f spread_by_pressure %.4f drift_by_mass %.3g drift_by_pressure %.3g hydrogen_top_by_pressure %.4f bits %016llx %016llx\n",
+			spread[0], spread[1], drift[0], drift[1], hydrogenShare[1], bits[0], bits[1]);
+	}
+	{
+		// Pressure mode: convection. A closed room 6 x 12 of Oxygen, 1.8 kg per cell; the bottom half at 400 K, the top at 250 K.
+		// By mass the gas does not know warm from cold: heat spreads only with diffusion. By pressure warm gas is lighter:
+		// the warm bottom expands upwards and the cold top sinks into it, so the layers mix faster. A cell has one temperature,
+		// so a sinking cold portion mixes at once; the room comes to an even temperature rather than warm over cold.
+		// Heat is conserved in both modes.
+		const std::vector<float> real = { 2.016f, 31.998f, 44.01f };
+		const int W = 8, H = 14;
+		double top[2] = { 0, 0 }, bottom[2] = { 0, 0 }, heatDrift[2] = { 0, 0 };
+		for (int mode = 0; mode < 2; mode++)
+		{
+			GasMixKernel kernel;
+			kernel.Reset(W, H, real);
+			kernel.ForcePlain(plain);
+			GasMixParams local = params;
+			local.byPressure = mode;
+			double energyBefore = 0;
+			for (int y = 1; y < H - 1; y++) for (int x = 1; x < W - 1; x++)
+			{
+				const int i = y * W + x;
+				kernel.Open()[i] = 1.0f;
+				kernel.Mass(1)[i] = 1.8f;
+				kernel.Temperature()[i] = y < H / 2 ? 400.0f : 250.0f;
+				energyBefore += 1.8 * kernel.Temperature()[i];
+			}
+			for (int tick = 0; tick < 3000; tick++) kernel.Step(local);
+			double energyAfter = 0, topSum = 0, topCount = 0, bottomSum = 0, bottomCount = 0;
+			for (int y = 1; y < H - 1; y++) for (int x = 1; x < W - 1; x++)
+			{
+				const int i = y * W + x;
+				const double t = kernel.Temperature()[i];
+				energyAfter += kernel.Mass(1)[i] * t;
+				if (y >= H - 3) { topSum += t; topCount++; }
+				if (y <= 2) { bottomSum += t; bottomCount++; }
+			}
+			top[mode] = topSum / topCount;
+			bottom[mode] = bottomSum / bottomCount;
+			heatDrift[mode] = (energyAfter - energyBefore) / energyBefore;
+		}
+		printf("convection top_by_mass %.2f bottom_by_mass %.2f top_by_pressure %.2f bottom_by_pressure %.2f heat_drift_by_mass %.3g heat_drift_by_pressure %.3g\n",
+			top[0], bottom[0], top[1], bottom[1], heatDrift[0], heatDrift[1]);
+	}
 	return 0;
 }

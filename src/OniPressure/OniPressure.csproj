@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Code shared by our mods is compiled into each mod separately: the mods do not depend on each other. -->
-    <Compile Include="../Common/ModContext.cs;../Common/ModLocalization.cs;../Common/SimHooks.cs;../Common/ElementRecords.cs" LinkBase="Common" />
+    <Compile Include="../Common/ModContext.cs;../Common/ModLocalization.cs;../Common/SimHooks.cs;../Common/ElementRecords.cs;../Common/MolarMasses.cs" LinkBase="Common" />
     <!-- PLib provides the standard mod options dialog. It goes into the mod folder as a separate file next to OniPressure.dll. -->
     <PackageReference Include="PLib" Version="4.25.0" />
     <ModLibrary Include="PLib.dll" />

@@ -28,10 +28,14 @@ namespace OniGasMix
 		// scenes 4-6, scene 8 (above scene 3; only two cells are open from its room) and the upper chamber of scene 7
 		// (above its lower one). The sixth column holds the phase rules scenes (9 and 10): they are set up only when the rules are enabled
 		// by the pressure mod; scene 5 is then skipped (it checks condensation by a single temperature, as in the game).
-		private const int Columns = 6, RoomWidth = 5, RoomHeight = 3;
+		private const int Columns = 7, RoomWidth = 5, RoomHeight = 3;
 		private const int SiteWidth = 1 + Columns * (RoomWidth + 1), SiteHeight = 2 * (RoomHeight + 1) + 1;
-		private static readonly int[] RoomColumn = { 0, 1, 2, 3, 0, 1, 2, 4, 3, 5, 5 };
-		private static readonly bool[] RoomUpper = { false, false, false, false, true, true, true, false, true, false, true };
+		// The seventh column holds the pressure scenes (11 and 12): set up only when the pressure is counted by molecules.
+		private static readonly int[] RoomColumn = { 0, 1, 2, 3, 0, 1, 2, 4, 3, 5, 5, 6, 6 };
+		private static readonly bool[] RoomUpper = { false, false, false, false, true, true, true, false, true, false, true, false, true };
+		private static bool byPressure;
+		// Pressure scenes: Hydrogen beside Oxygen; Oxygen warm below and cold above.
+		private const float SideHydrogen = 0.4f, WarmBelow = 380f, ColdAbove = 260f;
 		private const int StartTick = 60, BuildTicks = 4, FillTicks = 6, WaitTicks = 650;
 		// After how many ticks from the start of waiting the inventory of the condensation room goes to the log: by then the drops
 		// have fallen, and one can see where the liquid went before anything gets a chance to happen to it.
@@ -39,7 +43,11 @@ namespace OniGasMix
 		private const float Warm = 300f, Cold = 100f;
 		// Simulation limit: gas from a solid cell and from a liquid is emitted while the gas cell holds less than this.
 		private const float OffGasLimit = 1.8f, OxygenOverWater = 1.7f;
-		private const float PocketGas = 2f, BesidePocket = 20f, PocketWater = 5f;
+		private const float BesidePocket = 20f, PocketWater = 5f;
+		// Hydrogen of the pocket. By molecules the two cells must be at one pressure, otherwise the Hydrogen flows into the
+		// Carbon Dioxide cell before the water comes: as much Hydrogen as gives the pressure of 20 kg of Carbon Dioxide.
+		private static float PocketGas => byPressure ? BesidePocket * MolarMasses.Of(ElementLoader.FindElementByHash(SimHashes.Hydrogen))
+			/ MolarMasses.Of(ElementLoader.FindElementByHash(SimHashes.CarbonDioxide)) : 2f;
 
 		private static int phase, originX, originY;
 		private static long phaseTick;
@@ -109,6 +117,10 @@ namespace OniGasMix
 				else if (phase == 3 && !lookedEarly && tick >= phaseTick + EarlyLookTicks)
 				{
 					lookedEarly = true;
+					if (byPressure)
+					{
+						LookAtWarmRoom();
+					}
 					Debug.Log(phases ? $"[OniGasMix] GasCases: dense steam, {EarlyLookTicks} ticks in: {Describe(10, Moisture)}"
 						: $"[OniGasMix] GasCases: condensation, {EarlyLookTicks} ticks in: {Describe(5, Condensate)}");
 				}
@@ -264,6 +276,15 @@ namespace OniGasMix
 		{
 			byte slime = Db.Get().Diseases.GetIndex(Db.Get().Diseases.SlimeGerms.Id), food = Db.Get().Diseases.GetIndex(Db.Get().Diseases.FoodGerms.Id);
 			phases = SimHooks.GetValue("gas-mix.phase") == 1;
+			byPressure = MolarMasses.ByMolecules;
+			if (byPressure)
+			{
+				// 11. Hydrogen in the left two columns, Oxygen in the right three, at one temperature. 12. Oxygen, 1.8 kg per cell
+				// everywhere, the bottom row warm, the upper two cold. The walls of room 12 are insulated.
+				ForRoom(11, false, (cell, dx, dy) => Set(cell, dx < 2 ? SimHashes.Hydrogen : SimHashes.Oxygen, dx < 2 ? SideHydrogen : 1.8f, Warm));
+				ForRing(12, cell => SimMessages.SetInsulation(cell, 0.01f));
+				ForRoom(12, false, (cell, dx, dy) => Set(cell, SimHashes.Oxygen, 1.8f, dy == 0 ? WarmBelow : ColdAbove));
+			}
 			if (phases)
 			{
 				// 9. Water under Oxygen, all at one temperature: the water evaporates while its vapour in the air is less
@@ -394,6 +415,44 @@ namespace OniGasMix
 			BitConverter.GetBytes((int)ElementLoader.FindElementByHash(gas).idx).CopyTo(query, 0);
 			BitConverter.GetBytes(temperature).CopyTo(query, 4);
 			return SimHooks.Query("gas-mix.saturation", query) == 0 ? BitConverter.ToSingle(query, 8) : -1f;
+		}
+
+		/// <summary>
+		/// Kilograms of Oxygen at 20 degrees that give the pressure of this mass of gas at the scene temperature; by mass the
+		/// mass itself.
+		/// </summary>
+		private static float Equivalent(SimHashes gas, float mass)
+		{
+			return byPressure ? mass * MolarMasses.Of(ElementLoader.FindElementByHash(SimHashes.Oxygen)) / MolarMasses.Of(ElementLoader.FindElementByHash(gas)) * Warm / 293.15f : mass;
+		}
+
+		private static float earlyBottom, earlyTop, earlyBottomWarm, earlyTopWarm, earlyLow, earlyHigh;
+
+		/// <summary>Room 12 a few seconds in: the rows' masses and temperatures and the spread of pressure.</summary>
+		private static void LookAtWarmRoom()
+		{
+			earlyBottom = earlyTop = earlyBottomWarm = earlyTopWarm = earlyHigh = 0f;
+			earlyLow = float.MaxValue;
+			ForRoom(12, false, (cell, dx, dy) =>
+			{
+				float mass = GasMixture.Mass(cell, SimHashes.Oxygen), equivalent = CellEquivalent(cell);
+				earlyLow = Mathf.Min(earlyLow, equivalent);
+				earlyHigh = Mathf.Max(earlyHigh, equivalent);
+				if (dy == 0) { earlyBottom += mass; earlyBottomWarm += Grid.Temperature[cell] / RoomWidth; }
+				if (dy == RoomHeight - 1) { earlyTop += mass; earlyTopWarm += Grid.Temperature[cell] / RoomWidth; }
+			});
+		}
+
+		/// <summary>The cell's pressure as kilograms of Oxygen at 20 degrees, by its composition and temperature.</summary>
+		private static float CellEquivalent(int cell)
+		{
+			float sum = 0f, oxygen = MolarMasses.Of(ElementLoader.FindElementByHash(SimHashes.Oxygen));
+			GasMixture.Gases gases = GasMixture.Of(cell);
+			while (gases.Next(out Element gas, out float mass))
+			{
+				sum += mass * oxygen / MolarMasses.Of(gas);
+			}
+			return sum * Grid.Temperature[cell] / 293.15f;
 		}
 
 		/// <summary>Mass of all gases of the cell by the mixture's composition.</summary>
@@ -571,9 +630,11 @@ namespace OniGasMix
 			oxygen = RoomMass(1, SimHashes.Oxygen);
 			carbon = RoomMass(1, SimHashes.CarbonDioxide);
 			float overSolid = CellGas(RoomCell(1, 2, 0));
-			Report("off-gassing from a solid cell into another gas, up to the pressure limit", oxygen > 1f && oxygen < (OffGasLimit - 1f) * cells * 1.15f && Near(carbon, cells, 0.005f)
+			// By molecules the limit is the pressure: the room the Carbon Dioxide leaves, in kilograms of Oxygen.
+			float oxygenRoom = (OffGasLimit - Equivalent(SimHashes.CarbonDioxide, 1f)) / Equivalent(SimHashes.Oxygen, 1f) * cells;
+			Report("off-gassing from a solid cell into another gas, up to the pressure limit", oxygen > 1f && oxygen < oxygenRoom * 1.15f && Near(carbon, cells, 0.005f)
 				&& Delta("gas-mix.limit-raised") > 0 && Delta("gas-mix.limit-unrestored") == 0,
-				$"oxygen {oxygen:F3} kg (the limit leaves room for {(OffGasLimit - 1f) * cells:F1}), carbon dioxide {carbon:F4} of {cells} kg, all gases in the cell over the solid {overSolid:F3} kg; " +
+				$"oxygen {oxygen:F3} kg (the limit leaves room for {oxygenRoom:F1}), carbon dioxide {carbon:F4} of {cells} kg, all gases in the cell over the solid {overSolid:F3} kg; " +
 				$"the mass of the whole mixture shown {Delta("gas-mix.limit-raised")} times in all scenes, not restored {Delta("gas-mix.limit-unrestored")}", 1);
 
 			// 2. Evaporation from Polluted Water: Polluted Oxygen has appeared, Oxygen is in place, and the emission stopped
@@ -581,7 +642,7 @@ namespace OniGasMix
 			int overWater = RoomWidth * (RoomHeight - 1);
 			oxygen = RoomMass(2, SimHashes.Oxygen);
 			float polluted = RoomMass(2, SimHashes.ContaminatedOxygen);
-			float pollutedRoom = (OffGasLimit - OxygenOverWater) * overWater;
+			float pollutedRoom = (OffGasLimit - Equivalent(SimHashes.Oxygen, OxygenOverWater)) / Equivalent(SimHashes.ContaminatedOxygen, 1f) * overWater;
 			Report("off-gassing from a liquid into another gas, up to the pressure limit", polluted > 0f && polluted < pollutedRoom + 0.2f * RoomWidth + 0.5f && Near(oxygen, OxygenOverWater * overWater, 0.005f),
 				$"polluted oxygen {polluted:F3} kg (the limit leaves room for {pollutedRoom:F1}), oxygen {oxygen:F4} of {OxygenOverWater * overWater:F1} kg; arrivals kept the mixture {Delta("gas-mix.arrivals")} times in all scenes", 2);
 
@@ -642,7 +703,7 @@ namespace OniGasMix
 			// With phase rules some of the water manages to evaporate into the neighbouring cell: the tolerance is wider.
 			Report("liquid enters a cell whose gas the sim cannot displace", Near(water, PocketWater, phases ? 0.03f : 0.01f) && Near(hydrogenBeside, PocketGas, 0.01f) && Near(carbonBeside, BesidePocket, 0.01f)
 				&& Delta("gas-mix.displaced-by-layer") > 0,
-				$"water {water:F3} of {PocketWater:F1} kg, in the cell beside: hydrogen {hydrogenBeside:F3} of {PocketGas:F1} kg, carbon dioxide {carbonBeside:F3} of {BesidePocket:F1} kg; " +
+				$"water {water:F3} of {PocketWater:F1} kg, in the cell beside: hydrogen {hydrogenBeside:F3} of {PocketGas:F3} kg, carbon dioxide {carbonBeside:F3} of {BesidePocket:F1} kg; " +
 				$"gas taken by the layer {Delta("gas-mix.displaced-by-layer")} times in all scenes", 8);
 
 			if (phases)
@@ -668,6 +729,45 @@ namespace OniGasMix
 					&& dense < 1.1f * holds && dense > 0.6f * holds,
 					$"steam {dense:F2} kg (the room holds {holds:F2} kg at {hot:F1} K), water {rain:F2} kg, together {dense + rain:F2} of {all:F0} kg, started at {SteamStart:F0} K; " +
 					$"portions {Delta("gas-mix.condensed")}, as drops {Delta("gas-mix.condensed-drips")}, right in the cell {Delta("gas-mix.condensed-in-place")}", 10, Moisture);
+			}
+
+			if (byPressure)
+			{
+				// 11. Pressure evens out: the mass of each gas is unchanged; the cells' pressures (equivalent masses by the
+				// composition) differ little, the game sees each cell's pressure as its mass, and the Hydrogen, spread over the
+				// room, takes far less mass per cell than the Oxygen.
+				float side = RoomMass(11, SimHashes.Hydrogen), rest = RoomMass(11, SimHashes.Oxygen);
+				float least = float.MaxValue, most = 0f, worstShown = 0f;
+				ForRoom(11, false, (cell, dx, dy) =>
+				{
+					float equivalent = CellEquivalent(cell);
+					least = Mathf.Min(least, equivalent);
+					most = Mathf.Max(most, equivalent);
+					worstShown = Mathf.Max(worstShown, Mathf.Abs(Grid.Mass[cell] - equivalent) / equivalent);
+				});
+				Report("by molecules the layer evens out pressure, not mass", Near(side, SideHydrogen * 2 * RoomHeight, 0.005f) && Near(rest, 1.8f * 3 * RoomHeight, 0.005f)
+					&& most / least < 1.25f && worstShown < 0.02f,
+					$"hydrogen {side:F4} of {SideHydrogen * 2 * RoomHeight:F1} kg, oxygen {rest:F3} of {1.8f * 3 * RoomHeight:F1}; pressure across the room from {least:F3} to {most:F3} kg of oxygen; " +
+					$"the game's cell mass differs from the pressure by up to {worstShown:P1}", 11);
+
+				// 12. Warm below, cold above. Early, while the rows still differ in temperature, at one pressure the warm bottom
+				// row held less mass than the cold top one (LookAtWarmRoom). By now heat has evened out (the simulation's own
+				// conduction between cells takes part too), the rows hold equal masses and the pressures are equal.
+				float bottom = 0f, top = 0f, warmBottom = 0f, coldTop = 0f, low = float.MaxValue, high = 0f;
+				ForRoom(12, false, (cell, dx, dy) =>
+				{
+					float mass = GasMixture.Mass(cell, SimHashes.Oxygen), equivalent = CellEquivalent(cell);
+					low = Mathf.Min(low, equivalent);
+					high = Mathf.Max(high, equivalent);
+					if (dy == 0) { bottom += mass; warmBottom += Grid.Temperature[cell]; }
+					if (dy == RoomHeight - 1) { top += mass; coldTop += Grid.Temperature[cell]; }
+				});
+				warmBottom /= RoomWidth;
+				coldTop /= RoomWidth;
+				Report("by molecules warm gas holds less mass", earlyBottom < 0.97f * earlyTop && earlyHigh / earlyLow < 1.25f && high / low < 1.25f && Mathf.Abs(warmBottom - coldTop) < 20f
+					&& Near(RoomMass(12, SimHashes.Oxygen), 1.8f * cells, 0.005f),
+					$"{EarlyLookTicks} ticks in: bottom row {earlyBottom:F3} kg at {earlyBottomWarm:F1} K, top row {earlyTop:F3} kg at {earlyTopWarm:F1} K, pressure from {earlyLow:F3} to {earlyHigh:F3} kg of oxygen; " +
+					$"at the end: bottom row {bottom:F3} kg at {warmBottom:F1} K (started at {WarmBelow:F0}), top row {top:F3} kg at {coldTop:F1} K (started at {ColdAbove:F0}), pressure from {low:F3} to {high:F3}", 12);
 			}
 
 			Report("nothing was lost by the layer", Delta("gas-mix.lost-grams") == 0, $"lost {Delta("gas-mix.lost-grams")} g");

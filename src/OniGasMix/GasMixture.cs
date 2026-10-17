@@ -57,7 +57,7 @@ namespace OniGasMix
 					perMolar = new float[ElementLoader.elements.Count];
 					for (int i = 0; i < perMolar.Length; i++)
 					{
-						float molar = ElementLoader.elements[i].molarMass;
+						float molar = MolarMasses.Of(ElementLoader.elements[i]);
 						perMolar[i] = molar > 0f ? 1f / molar : 0f;
 					}
 				}
@@ -131,11 +131,10 @@ namespace OniGasMix
 				return 0f;
 			}
 			ushort main = Grid.ElementIdx[cell];
-			float total = Grid.Mass[cell];
 			int first = active && firstRecord != null ? firstRecord[cell] : 0;
 			if (first == 0)
 			{
-				return main == element ? total : 0f;
+				return main == element ? GasLayerBreathing.MainMass(cell) : 0f;
 			}
 			float others = 0f, found = 0f;
 			for (int i = first - 1; i < count && buffer[Header + i * RecordInts] == cell; i++)
@@ -147,7 +146,26 @@ namespace OniGasMix
 					found = mass;
 				}
 			}
-			return main == element ? Math.Max(0f, total - others) : found;
+			return main == element ? GasLayerBreathing.MainMass(cell) : found;
+		}
+
+		/// <summary>
+		/// Real mass of all the cell's gas. The game sees a gas cell's mass as pressure: the mass of the whole mixture, or by
+		/// molecules the mass of Oxygen that would give the same pressure (sim/plugins/gas_mix.cpp, "pressure mode").
+		/// </summary>
+		internal static float RealTotal(int cell)
+		{
+			if (!Grid.IsValidCell(cell) || !Grid.Element[cell].IsGas)
+			{
+				return Grid.IsValidCell(cell) ? Grid.Mass[cell] : 0f;
+			}
+			float total = 0f;
+			Gases gases = Of(cell);
+			while (gases.Next(out Element _, out float mass))
+			{
+				total += mass;
+			}
+			return total;
 		}
 
 		internal static float Mass(int cell, SimHashes gas)
@@ -195,7 +213,7 @@ namespace OniGasMix
 				{
 					mainLeft = false;
 					gas = Grid.Element[cell];
-					mass = Math.Max(0f, Grid.Mass[cell] - others);
+					mass = GasLayerBreathing.MainMass(cell);
 					return mass > 0f;
 				}
 				gas = null;
@@ -264,7 +282,7 @@ namespace OniGasMix
 					wanted = part;
 				}
 			}
-			float mainPart = Math.Max(0f, Grid.Mass[cell] - others) * perMolar[main];
+			float mainPart = GasLayerBreathing.MainMass(cell) * perMolar[main];
 			molecules += mainPart;
 			if (main == element)
 			{

@@ -58,6 +58,12 @@ SIM_COUNTER(swapsBlocked, "gas-mix.sim-swaps-blocked");               // how man
 // For comparing speed within one launch: with this switch the data frame for the game is not adjusted
 // and no layer snapshot is made for the mod (the mod then breathes the old way, and the game sees the main gas's mass).
 SIM_FLAG(pressureOff, "gas-mix.pressure-off");
+// Pressure mode (the pressure mod's "by molecules", set by the mod together with the elements table, whose molar masses are
+// then the real ones): the layer evens out pressure, not mass (gas_mix_kernel.h), and wherever the game and the simulation
+// look at a gas cell's mass as pressure (buildings, sensors, vents, sources, the off-gassing limit) they are shown the cell's
+// "equivalent mass": the mass of Oxygen at 20 degrees that would give the same pressure. Without it they see the mass of the
+// whole mixture.
+SIM_FLAG(byPressure, "gas-mix.by-pressure");
 // Phase rules (sim/plugins/phase_rules.h): condensation by saturated vapour pressure, evaporation and boiling of liquid
 // into the neighbouring gas cell, latent heat of transition. They are enabled by the pressure mod, which at the same time forbids
 // the simulation its own transitions between liquid and gas; without it the layer condenses by temperature, like the game.
@@ -266,6 +272,8 @@ namespace
 		std::vector<float> projectedMass;
 		std::vector<float> lastTemperature;      // last non-zero cell temperature ("layer moves gas itself" mode)
 		std::vector<float> otherMass;            // mass of all gases of the cell except the main one, after the last projection write
+		std::vector<float> shownExtra;           // what is added to the main gas's mass when the cell is shown as pressure: otherMass,
+		                                         // or in the pressure mode the equivalent mass minus the main gas's mass (may be negative)
 		// By what factor the cell temperature change computed by the simulation from the main gas differs from
 		// what the mixture should get (after the last projection write): the main gas's share of the mixture's heat capacity, multiplied
 		// by the thermal conductivity correction. A cell with a single gas has 1.
@@ -608,6 +616,7 @@ namespace
 		layer.projectedMass.assign(c.count, 0.0f);
 		layer.lastTemperature.assign(c.count, 0.0f);
 		layer.otherMass.assign(c.count, 0.0f);
+		layer.shownExtra.assign(c.count, 0.0f);
 		layer.limitKind.assign(c.count, 0);
 		layer.limitCells.clear();
 		layer.residue.clear();
@@ -834,12 +843,12 @@ namespace
 		SimCells* cells = sim->updatedCells;
 		if (cell < 0 || (size_t)cell >= cells->mass.size() || (size_t)cell >= cells->elementIdx.size() || !LayerReady(elements, cell) || layer.hidden[cell]) return;
 		const uint16_t main = cells->elementIdx.first[cell];
-		const float others = layer.otherMass[cell];
-		if (!elements->IsGas(main) || main != layer.projectedElement[cell] || !(others > 0.0f)) return;
+		const float extra = layer.shownExtra[cell];
+		if (!elements->IsGas(main) || main != layer.projectedElement[cell] || extra == 0.0f) return;
 		limitRaise.cell = cell;
 		limitRaise.element = main;
 		limitRaise.real = cells->mass.first[cell];
-		limitRaise.shown = limitRaise.real + others;
+		limitRaise.shown = limitRaise.real + extra > 0.0f ? limitRaise.real + extra : 0.0f;
 		cells->mass.first[cell] = limitRaise.shown;
 		limitRaised.fetch_add(1, std::memory_order_relaxed);
 	}
@@ -1320,6 +1329,7 @@ namespace
 		}
 		int64_t germTime = NowMicros() - germStart;
 		const int64_t kernelStart = NowMicros();
+		layer.params.byPressure = byPressure.load(std::memory_order_relaxed) != 0 ? 1 : 0;
 		kernel.Step(layer.params);
 		const int64_t projectStart = NowMicros();
 		// Germs are usually few (tens of cells across the whole base), so their transport is not computed by the whole step,
@@ -1607,11 +1617,13 @@ namespace
 
 		// 3. Projection: the main gas by number of molecules and its mass, into the simulation cells.
 		std::vector<const float*> masses(present.size());
-		std::vector<float> perMolar(present.size());
+		std::vector<float> perMolar(present.size()), equivalentPerKg(present.size(), 0.0f);
+		const bool pressureMode = byPressure.load(std::memory_order_relaxed) != 0;
 		for (size_t i = 0; i < present.size(); i++)
 		{
 			masses[i] = kernel.Mass(present[i]);
 			perMolar[i] = 1.0f / elements->elements[present[i]].molar;
+			if (pressureMode) equivalentPerKg[i] = kernel.EquivalentPerKg(present[i], layer.params);
 		}
 		// Condensation of non-main gases (described at ReleaseCondensate): below which temperature a gas becomes
 		// liquid, and which one. Gases without such a transition have a zero threshold.
@@ -1659,6 +1671,7 @@ namespace
 		forCells(false, [&](size_t cell)
 		{
 			layer.otherMass[cell] = 0.0f;
+			layer.shownExtra[cell] = 0.0f;
 			layer.mainShare[cell] = 1.0f;
 			if (open[cell] == 0.0f)
 			{
@@ -1792,7 +1805,17 @@ namespace
 				}
 			}
 			layer.otherMass[cell] = others;
-			if (others > 0.0f)
+			if (pressureMode)
+			{
+				float equivalent = 0.0f;
+				for (size_t i = 0; i < present.size(); i++) equivalent += masses[i][cell] * equivalentPerKg[i];
+				layer.shownExtra[cell] = equivalent * warm - mainMass;
+			}
+			else
+			{
+				layer.shownExtra[cell] = others;
+			}
+			if (layer.shownExtra[cell] != 0.0f)
 			{
 				// A gas-emitting solid is nearby: the mixture mass must be shown to the processing of the cell itself. Below the cell
 				// is a gas-emitting liquid: to the processing of that liquid.
@@ -2334,7 +2357,12 @@ namespace
 				float pressure = cells->mass.first[cell];
 				if (pressure < emitter->maxPressure) roomByMainGas = true;
 				const bool mixture = elements->IsGas(main) && LayerReady(elements, cell);
-				if (mixture)
+				if (mixture && byPressure.load(std::memory_order_relaxed) != 0)
+				{
+					// Pressure mode: the equivalent mass from the last projection.
+					pressure += layer.shownExtra[cell];
+				}
+				else if (mixture)
 				{
 					for (int32_t gas : layer.kernel.Present()) if ((uint16_t)gas != main) pressure += layer.kernel.Mass(gas)[cell];
 				}
@@ -2410,10 +2438,20 @@ namespace
 			for (const RaisedCell& raised : raisedCells) already = already || raised.cell == cell;
 			if (already) continue;
 			float others = 0.0f;
-			for (int32_t gas : layer.kernel.Present()) if ((uint16_t)gas != main) others += layer.kernel.Mass(gas)[cell];
-			if (!(others > 0.0f)) continue;
+			if (byPressure.load(std::memory_order_relaxed) != 0)
+			{
+				// Pressure mode: the equivalent mass from the last projection.
+				others = layer.shownExtra[cell];
+				if (others == 0.0f) continue;
+			}
+			else
+			{
+				for (int32_t gas : layer.kernel.Present()) if ((uint16_t)gas != main) others += layer.kernel.Mass(gas)[cell];
+				if (!(others > 0.0f)) continue;
+			}
 			raisedCells.push_back(RaisedCell{ cell, cells->mass.first[cell] });
-			cells->mass.first[cell] += others;
+			const float shown = cells->mass.first[cell] + others;
+			cells->mass.first[cell] = shown > 0.0f ? shown : 0.0f;
 			emitterRaised.fetch_add(1, std::memory_order_relaxed);
 		}
 	}
@@ -2801,14 +2839,21 @@ namespace
 			if (first >= last) return;
 			const size_t cellCount = last - first, game = (size_t)y * gameWidth + (first - (rowStart + 1));
 			snapshot->rows.emplace_back((uint32_t)game, (uint32_t)cellCount);
+			// The game sees the cell as pressure: the main gas's mass plus the extra (the other gases, or in the pressure mode
+			// up to the equivalent mass); the mod gets the extra to restore the main gas's mass.
 			const float* other = layer.otherMass.data() + first;
+			const float* extra = layer.shownExtra.data() + first;
 			float* others = snapshot->others.data() + game;
 			float* mass = gameMass + game;
-			memcpy(others, other, cellCount * sizeof(float));
-			for (size_t i = 0; i < cellCount; i++) mass[i] += other[i];
+			memcpy(others, extra, cellCount * sizeof(float));
+			for (size_t i = 0; i < cellCount; i++)
+			{
+				const float shown = mass[i] + extra[i];
+				mass[i] = shown > 0.0f ? shown : 0.0f;
+			}
 			if (count)
 			{
-				for (size_t i = 0; i < cellCount; i++) if (other[i] > 0.0f) { patched++; added += other[i]; }
+				for (size_t i = 0; i < cellCount; i++) if (extra[i] != 0.0f) { patched++; added += extra[i]; }
 			}
 			float* breathable = snapshot->breathable.data() + game;
 			memset(breathable, 0, cellCount * sizeof(float));

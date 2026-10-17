@@ -12,6 +12,17 @@
 //     hole entirely, like water into a drain: Hydrogen at the hole flows into the cell below it (the mixture there is heavier), and
 //     pressure pulls Hydrogen from behind into its place. In open space and for gases of equal weight the rule is silent.
 //
+// Pressure mode (GasMixParams::byPressure, the pressure mod's "by molecules"): rule 1 evens out pressure instead of mass,
+// and rules 3 and 4 compare density instead of molar mass. A cell's pressure is counted as an "equivalent mass": the mass
+// of the reference gas (Oxygen) that would give the same pressure at the reference temperature, sum of m * Mref / M * T / Tref
+// over the gases; pure Oxygen at 20 degrees has an equivalent mass equal to its mass. At equal pressure a cell holds 16 times
+// less Hydrogen than Oxygen, and a warm cell less gas than a cold one. The share of a cell leaving through an edge is the
+// equivalent flow divided by the cell's equivalent mass: all gases of the cell leave in the same share, so mass is
+// conserved exactly, as in the mass mode. Density at a common pressure is M / T: a gas falls into the cell below if it is
+// denser there than that cell's mixture (mixture molar mass over its temperature); warm air is lighter than cold, and with
+// pressure pushing back this gives convection. A cell has one temperature, so a sinking cold portion mixes at once: warm
+// gas below cold mixes faster than by diffusion alone, but no warm layer stays above a cold one.
+//
 // Rules 1 and 2 are computed in one pass over the state at the start of the step: from the total mass of the cells the
 // edge coefficients, shared by all gases, are found, and then each gas is updated separately. The flow through an edge
 // is computed by the same expression for both cells, so mass is conserved up to rounding.
@@ -61,6 +72,8 @@ struct GasMixParams
 	float diffusion = 0.004f; // mixing strength
 	float gravity = 0.02f;    // gravity strength
 	float spread = 0.1f;      // strength of spreading along ceilings and floors
+	int32_t byPressure = 0;   // 1: pressure mode (see the top of the file)
+	float referenceMolar = 31.998f, referenceTemperature = 293.15f; // reference gas of the equivalent mass: Oxygen at 20 degrees
 };
 
 // Rectangle of cells: the right and top borders are not included.
@@ -108,7 +121,7 @@ public:
 		present_.clear();
 		// Arrays have one spare row on each side: neighbours above and below are read without edge checks.
 		open_.assign(cells_ + 2 * width_, 0.0f);
-		for (GasMixField* field : { &total_, &invTotal_, &heavy_, &aH_, &bH_, &aV_, &bV_, &down_, &side_, &next_, &temperature_, &capacity_, &energy_, &energyDown_, &energySide_ })
+		for (GasMixField* field : { &total_, &invTotal_, &heavy_, &aH_, &bH_, &aV_, &bV_, &down_, &side_, &next_, &temperature_, &capacity_, &energy_, &energyDown_, &energySide_, &equivalent_, &invEquivalent_, &density_, &invTemperature_ })
 		{
 			field->assign(cells_ + 2 * width_, 0.0f);
 		}
@@ -150,7 +163,7 @@ public:
 		// Working arrays outside the regions must be zero: cells at a region's edge read their neighbours from there.
 		runs_.clear();
 		spans_.clear();
-		for (GasMixField* field : { &total_, &invTotal_, &heavy_, &aH_, &bH_, &aV_, &bV_, &down_, &side_, &next_, &capacity_, &energy_, &energyDown_, &energySide_ })
+		for (GasMixField* field : { &total_, &invTotal_, &heavy_, &aH_, &bH_, &aV_, &bV_, &down_, &side_, &next_, &capacity_, &energy_, &energyDown_, &energySide_, &equivalent_, &invEquivalent_, &density_, &invTemperature_ })
 		{
 			field->assign(cells_ + 2 * width_, 0.0f);
 		}
@@ -230,6 +243,13 @@ public:
 		Sum();
 	}
 
+	// Pressure mode: the equivalent mass of a gas per kg and kelvin (multiplied by the cell temperature it gives kg of the
+	// reference gas).
+	float EquivalentPerKg(int32_t gas, const GasMixParams& params) const
+	{
+		return params.referenceMolar / molar_[gas] / params.referenceTemperature;
+	}
+
 	// Whether the processor has AVX and whether the system saves its registers on thread switches.
 	static bool HasAvx()
 	{
@@ -275,6 +295,7 @@ private:
 		_mm_setcsr(savedMode | 0x8040); // FTZ and DAZ
 		BuildSpans();
 		Sum();
+		if (params.byPressure) Equivalent(params);
 		Edges(1, params, aH_, bH_);
 		Edges(width_, params, aV_, bV_);
 		// The right cell of a row and the left cell of the next one are adjacent in the array, but not in the world.
@@ -292,7 +313,12 @@ private:
 		EnergyToHeat();
 		for (const Span& span : spans_) memset(energyDown_.data() + width_ + span.first, 0, (size_t)(span.last - span.first) * sizeof(float));
 		FindBarriers();
-		for (int32_t gas : present_) FallAndSpread(mass_[gas], molar_[gas], heat_[gas], params.gravity, params.spread);
+		if (params.byPressure) Densities();
+		for (int32_t gas : present_)
+		{
+			if (params.byPressure) FallAndSpread<true>(mass_[gas], molar_[gas], heat_[gas], params.gravity, params.spread);
+			else FallAndSpread<false>(mass_[gas], molar_[gas], heat_[gas], params.gravity, params.spread);
+		}
 		// Heat that fell and flowed sideways together with gas.
 		{
 			const ptrdiff_t w = width_;
@@ -375,6 +401,54 @@ private:
 		(heavy_.data() + width_)[i] = moles > 0.0f ? total / moles : 0.0f;
 	}
 
+	// Pressure mode: equivalent mass of each cell (see the top of the file) and its inverse.
+	GAS_MIX_INLINE void Equivalent(const GasMixParams& params)
+	{
+		const size_t gases = sumMass_.size();
+		sumWeight_.resize(gases);
+		for (size_t g = 0; g < gases; g++) sumWeight_[g] = EquivalentPerKg(present_[g], params);
+		const float* __restrict t = temperature_.data() + width_;
+		float* __restrict eq = equivalent_.data() + width_;
+		float* __restrict inv = invEquivalent_.data() + width_;
+		for (const Span& span : spans_)
+		{
+			for (ptrdiff_t i = span.first; i < span.last; i++)
+			{
+				float weighted = 0.0f;
+				for (size_t g = 0; g < gases; g++) weighted += sumMass_[g][i] * sumWeight_[g];
+				const float e = weighted * t[i];
+				eq[i] = e;
+				inv[i] = e > 0.0f ? 1.0f / e : 0.0f;
+			}
+		}
+	}
+
+	// Pressure mode, before falling and spreading: the density of each cell's mixture at a common pressure (its molar mass
+	// over its temperature) and the inverse temperature, by which a gas's own density in the cell is found.
+	GAS_MIX_INLINE void Densities()
+	{
+		const float* __restrict t = temperature_.data() + width_;
+		const float* __restrict heavy = heavy_.data() + width_;
+		float* __restrict density = density_.data() + width_;
+		float* __restrict invT = invTemperature_.data() + width_;
+		for (const Span& span : spans_)
+		{
+			for (ptrdiff_t i = span.first; i < span.last; i++)
+			{
+				const float inverse = t[i] > 0.0f ? 1.0f / t[i] : 0.0f;
+				invT[i] = inverse;
+				density[i] = heavy[i] * inverse;
+			}
+		}
+	}
+
+	// (a - b) / (a + b), zero when both are zero.
+	static GAS_MIX_INLINE float Contrast(float a, float b)
+	{
+		const float sum = a + b;
+		return sum > 0.0f ? (a - b) / sum : 0.0f;
+	}
+
 	GAS_MIX_INLINE void HeatToEnergy()
 	{
 		const float* __restrict t = temperature_.data() + width_;
@@ -407,6 +481,28 @@ private:
 		float* __restrict pa = a.data() + width_;
 		float* __restrict pb = b.data() + width_;
 		const float pressure = params.pressure, diffusion = params.diffusion;
+		if (params.byPressure)
+		{
+			// Flow by the difference of equivalent masses (pressure); the share leaving is taken of the equivalent mass, the
+			// diffusion share of the real one, as in the mass mode.
+			const float* __restrict eq = equivalent_.data() + width_;
+			const float* __restrict invEq = invEquivalent_.data() + width_;
+			for (const Span& span : spans_)
+			{
+				for (ptrdiff_t i = span.first; i < span.last; i++)
+				{
+					const float here = eq[i], there = eq[i + step];
+					float flow = pressure * (here - there);
+					flow = flow > here * 0.125f ? here * 0.125f : flow;
+					flow = flow < -there * 0.125f ? -there * 0.125f : flow;
+					const float mix = diffusion * (total[i] < total[i + step] ? total[i] : total[i + step]);
+					const float both = open[i] * open[i + step];
+					pa[i] = both * ((flow > 0.0f ? flow : 0.0f) * invEq[i] + mix * inv[i]);
+					pb[i] = both * ((flow < 0.0f ? -flow : 0.0f) * invEq[i + step] + mix * inv[i + step]);
+				}
+			}
+			return;
+		}
 		// The neighbour of the last grid cells lies in the spare row: it is closed, and the coefficients come out zero.
 		for (const Span& span : spans_)
 		{
@@ -555,8 +651,12 @@ private:
 		runStart_.push_back(runs_.size());
 	}
 
+	// Density: compare a gas's density with the mixture's (pressure mode) instead of molar masses.
+	template <bool Density>
 	GAS_MIX_INLINE void FallAndSpread(GasMixField& field, float molar, float heat, float gravity, float spread)
 	{
+		const float* __restrict density = density_.data() + width_;
+		const float* __restrict invT = invTemperature_.data() + width_;
 		const ptrdiff_t w = width_;
 		float* __restrict m = field.data() + w;
 		float* __restrict down = down_.data() + w;
@@ -572,6 +672,7 @@ private:
 		float* __restrict lighter = next_.data() + w;
 		const auto weigh = [&](const Span& span) __attribute__((always_inline))
 		{
+			if (Density) return;
 			for (ptrdiff_t i = span.first; i < span.last; i++) lighter[i] = (heavy[i] - molar) / (heavy[i] + molar);
 		};
 		// down: how much gas leaves the cell into the cell below it. Below the bottom grid row is the spare one, and below the bottom
@@ -580,7 +681,8 @@ private:
 		{
 			for (ptrdiff_t i = span.first; i < span.last; i++)
 			{
-				const float excess = -lighter[i - w];
+				// Density: this gas at this cell's temperature against the mixture of the cell below at its own.
+				const float excess = Density ? Contrast(molar * invT[i], density[i - w]) : -lighter[i - w];
 				float share = gravity * (excess > 0.0f ? excess : 0.0f);
 				share = share > 1.0f ? 1.0f : share;
 				down[i] = open[i] * open[i - w] * share * m[i];
@@ -596,7 +698,8 @@ private:
 			for (ptrdiff_t i = run.first; i < run.last; i++)
 			{
 				// From here to the right: by the right neighbour's mixture; from the right to here: by this cell's mixture.
-				const float there = lighter[i + 1], here = lighter[i];
+				const float there = Density ? Contrast(density[i + 1], molar * invT[i]) : lighter[i + 1];
+				const float here = Density ? Contrast(density[i], molar * invT[i + 1]) : lighter[i];
 				const float out = (1.0f - open[i + w]) * (there > 0.0f ? there : 0.0f) + (1.0f - open[i - w]) * (there < 0.0f ? -there : 0.0f);
 				const float in = (1.0f - open[i + 1 + w]) * (here > 0.0f ? here : 0.0f) + (1.0f - open[i + 1 - w]) * (here < 0.0f ? -here : 0.0f);
 				const float both = open[i] * open[i + 1] * spread;
@@ -641,6 +744,7 @@ private:
 	std::vector<int32_t> present_;
 	GasMixField open_, total_, invTotal_, heavy_, aH_, bH_, aV_, bV_, down_, side_, next_;
 	GasMixField temperature_, capacity_, energy_, energyDown_, energySide_;
+	GasMixField equivalent_, invEquivalent_, density_, invTemperature_; // pressure mode
 	GasMixField passive_[MaxPassive];
 	std::vector<float> sparse_; // working array of AdvectPassive
 	bool passiveUsed_[MaxPassive] = {};
@@ -654,5 +758,5 @@ private:
 	bool plain_ = false;
 	// Working lists of Sum(): mass arrays and multipliers of the gases present in the layer.
 	std::vector<const float*> sumMass_;
-	std::vector<float> sumPerMolar_, sumHeat_;
+	std::vector<float> sumPerMolar_, sumHeat_, sumWeight_;
 };

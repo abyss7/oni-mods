@@ -17,7 +17,8 @@ namespace OniCommon
 		/// share of the mass, thermal conductivity, what the element turns into when heated, what stays solid in that case,
 		/// above which temperature and which share of the mass.
 		/// </summary>
-		internal static byte[] Build(Func<Element, bool> breathable)
+		/// <param name="molar">molar mass of an element; by default the game's (see MolarMasses)</param>
+		internal static byte[] Build(Func<Element, bool> breathable, Func<Element, float> molar = null)
 		{
 			var elements = ElementLoader.elements;
 			using (MemoryStream stream = new MemoryStream(elements.Count * 40))
@@ -25,7 +26,7 @@ namespace OniCommon
 			{
 				foreach (Element element in elements)
 				{
-					writer.Write(element.molarMass);
+					writer.Write(molar != null ? molar(element) : element.molarMass);
 					writer.Write(element.specificHeatCapacity);
 					writer.Write((byte)(element.state & Element.State.Solid));
 					// Flags: 1 means "breathable", 2: a solid or liquid emits gas into the neighbouring cell

@@ -133,7 +133,15 @@ namespace OniGasMix
 			{
 				// The layer needs element properties. The table is ready only in-game, so it is sent on the first tick;
 				// until then the layer skips ticks.
-				elementsSent = SimHooks.SendData("gas-mix.elements", ElementRecords.Build(GasLayerBreathing.IsBreathable));
+				// By molecules (the pressure mod's setting) the layer gets the molecules' molar masses and evens out pressure,
+				// not mass (sim/plugins/gas_mix_kernel.h).
+				bool byPressure = MolarMasses.ByMolecules;
+				SimHooks.SetValue("gas-mix.by-pressure", byPressure ? 1 : 0);
+				elementsSent = SimHooks.SendData("gas-mix.elements", ElementRecords.Build(GasLayerBreathing.IsBreathable, MolarMasses.Of));
+				if (elementsSent)
+				{
+					Debug.Log($"[OniGasMix] GasLayer: the layer evens out {(byPressure ? "pressure (by molecules, the pressure mod's setting)" : "mass")}");
+				}
 				// "Strength" of germ types: the layer uses it to decide which type stays in a cell where two meet.
 				SimHooks.SendData("gas-mix.germs", GermStrengths());
 			}

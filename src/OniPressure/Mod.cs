@@ -23,6 +23,7 @@ namespace OniPressure
 			new POptions().RegisterOptions(this, typeof(Options));
 			Options = POptions.ReadSettings<Options>() ?? new Options();
 			ModLocalization.Apply(harmony, typeof(ONIPRESSURE));
+			MolarMasses.PublishMode(!Options.PressureByMass);
 			PressureSurvey.Apply(harmony);
 			PhaseRules.Apply(harmony);
 			CellPressure.Publish(Options.PressureByMass);

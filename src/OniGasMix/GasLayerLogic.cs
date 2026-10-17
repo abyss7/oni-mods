@@ -608,7 +608,7 @@ namespace OniGasMix
 			{
 				return;
 			}
-			float total = Grid.Mass[environment_cell];
+			float total = GasMixture.RealTotal(environment_cell);
 			if (!(total > 0f))
 			{
 				return;
