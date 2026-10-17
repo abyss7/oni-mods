@@ -692,6 +692,12 @@ namespace OniCommon
 			{
 				__result = legend();
 			}
+			else if (__result == null && __instance is OverlayModes.Oxygen && __instance.legendFilters != null)
+			{
+				// The normal view with the selection list: the legend built "from code" hides the overlay's own rows
+				// (Very Breathable ... Unbreathable, with their icons) when the mode gives no rows of its own. An empty list keeps them.
+				__result = new List<LegendEntry>();
+			}
 		}
 
 		// ---------- Common pieces of text for providers ----------
