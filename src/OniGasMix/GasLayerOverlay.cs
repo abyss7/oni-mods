@@ -48,7 +48,7 @@ namespace OniGasMix
 		private const float FadeBelow = 0.1f;
 		private const float TraceShare = 0.0005f;  // a smaller share of gas is not shown in the picture
 		private const float FloorBrightness = 0.15f; // brightness of the smallest shown share
-		private static readonly float[] LegendLevels = { 1f, 0.75f, 0.5f, 0.25f };
+		private static readonly float[] LegendLevels = { 1f, 0.5f }; // plus traces: the colour itself is smooth
 		private static readonly Color Empty = new Color(0.06f, 0.07f, 0.09f, 1f); // a cell without the selected gas
 
 		private static float[] field;         // request header; mass of the selected gas and number of moles of all gases per cell
@@ -105,6 +105,7 @@ namespace OniGasMix
 				["hover"] = (Func<int, List<string>>)GasLayerHover.HoverLinesFor,
 				["panel"] = (Func<int, string>)GasLayerHover.PanelText,
 				["choices"] = (Func<List<string[]>>)Choices,
+				["textColour"] = "9FDCEB", // gases: light blue
 				["current"] = (Func<string>)(() => selected >= 0 && !failed && selected < ElementLoader.elements.Count ? KeyOf(ElementLoader.elements[selected]) : null),
 				["select"] = (Action<string>)(key => Select(key != null && gasByKey.TryGetValue(key, out int index) ? index : -1)),
 				["refresh"] = (System.Action)(() => Refresh(wait: false)),
@@ -218,6 +219,7 @@ namespace OniGasMix
 				return choices;
 			}
 			int count = Math.Min(BitConverter.ToInt32(present, 0), MaxGases);
+			Dictionary<int, double> amounts = WorldAmounts();
 			for (int i = 0; i < count; i++)
 			{
 				int index = BitConverter.ToInt32(present, 4 * (1 + i));
@@ -228,9 +230,54 @@ namespace OniGasMix
 				Element element = ElementLoader.elements[index];
 				string key = KeyOf(element);
 				gasByKey[key] = index;
-				choices.Add(new[] { key, STRINGS.UI.StripLinkFormatting(element.name), element.description });
+				amounts.TryGetValue(index, out double amount);
+				choices.Add(new[] { key, STRINGS.UI.StripLinkFormatting(element.name), element.description,
+					amount.ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
 			}
 			return choices;
+		}
+
+		private static Dictionary<int, double> amountsCache;
+		private static int amountsWorld = -1;
+		private static float amountsTime;
+
+		/// <summary>
+		/// How much of each gas the active world holds, kg by element number (by the mixture's composition): the list is ordered
+		/// by it. The world is walked at most once in a few seconds: the list is rebuilt several times when the overlay opens.
+		/// </summary>
+		private static Dictionary<int, double> WorldAmounts()
+		{
+			WorldContainer world = ClusterManager.Instance?.activeWorld;
+			if (world == null)
+			{
+				return new Dictionary<int, double>();
+			}
+			if (amountsCache != null && amountsWorld == world.id && Time.unscaledTime - amountsTime < 5f)
+			{
+				return amountsCache;
+			}
+			var amounts = new Dictionary<int, double>();
+			amountsCache = amounts;
+			amountsWorld = world.id;
+			amountsTime = Time.unscaledTime;
+			for (int y = world.WorldOffset.y; y < world.WorldOffset.y + world.WorldSize.y; y++)
+			{
+				for (int x = world.WorldOffset.x; x < world.WorldOffset.x + world.WorldSize.x; x++)
+				{
+					int cell = Grid.XYToCell(x, y);
+					if (!Grid.IsValidCell(cell) || !Grid.Element[cell].IsGas)
+					{
+						continue;
+					}
+					GasMixture.Gases gases = GasMixture.Of(cell);
+					while (gases.Next(out Element gas, out float mass))
+					{
+						amounts.TryGetValue(gas.idx, out double sum);
+						amounts[gas.idx] = sum + mass;
+					}
+				}
+			}
+			return amounts;
 		}
 
 		private static void Select(int element)

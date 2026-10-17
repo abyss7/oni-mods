@@ -33,7 +33,7 @@ namespace OniLiquidMix
 		private const float MinShare = 0.005f;       // a share below 0.5% by mass goes into the "Other" line
 		private const float FloorBrightness = 0.15f; // brightness of the smallest shown share
 		private const int Header = 8;                // header of the field query: eight ints
-		private static readonly float[] LegendLevels = { 1f, 0.75f, 0.5f, 0.25f };
+		private static readonly float[] LegendLevels = { 1f, 0.5f }; // plus traces: the colour itself is smooth
 		private static readonly Color Empty = new Color(0.06f, 0.07f, 0.09f, 1f);
 
 		private static int selected = -1;
@@ -70,6 +70,7 @@ namespace OniLiquidMix
 				["hover"] = (Func<int, List<string>>)HoverLinesFor,
 				["panel"] = (Func<int, string>)PanelText,
 				["choices"] = (Func<List<string[]>>)Choices,
+				["textColour"] = "7FA6F5", // liquids: a deeper blue
 				["current"] = (Func<string>)(() => selected >= 0 && !failed && selected < ElementLoader.elements.Count ? KeyOf(ElementLoader.elements[selected]) : null),
 				["select"] = (Action<string>)(key => Select(key != null && liquidByKey.TryGetValue(key, out int index) ? index : -1)),
 				["refresh"] = (System.Action)(() => Refresh(wait: false)),
@@ -263,7 +264,9 @@ namespace OniLiquidMix
 				Element element = ElementLoader.elements[index];
 				string key = KeyOf(element);
 				liquidByKey[key] = index;
-				choices.Add(new[] { key, Name(element), element.description });
+				// The survey's totals (kg in the colony's mixtures and pure cells): the list is ordered by them.
+				double amount = BitConverter.ToDouble(buffer, 8 + i * 16 + 8);
+				choices.Add(new[] { key, Name(element), element.description, amount.ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
 			}
 			return choices;
 		}

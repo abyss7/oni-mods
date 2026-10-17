@@ -24,7 +24,10 @@ namespace OniCommon
 	///                                              the game hooks in mod translations after the mods are loaded);
 	///   "hover"    Func&lt;int, List&lt;string&gt;&gt;          tooltip lines for a cell (the first: the title); empty: nothing to show;
 	///   "panel"    Func&lt;int, string&gt;                selected-cell line text; empty: nothing to show;
-	///   "choices"  Func&lt;List&lt;string[]&gt;&gt;             what can be chosen in the overlay: {key, label, tooltip};
+	///   "choices"  Func&lt;List&lt;string[]&gt;&gt;             what can be chosen in the overlay: {key, label, tooltip} and
+	///                                              optionally the amount in the world (kg, invariant culture): the list is
+	///                                              ordered by it, the largest first, otherwise by label;
+	///   "textColour" string                        optional: colour of the group's labels in the mixtures overlay (hex RRGGBB);
 	///   "current"  Func&lt;string&gt;                     the selected key of this group or null;
 	///   "select"   Action&lt;string&gt;                   selection of a key of this group (null: the normal view or another group is selected);
 	///   "refresh"  System.Action                         before the overlay is redrawn, while a key of this group is selected;
@@ -258,6 +261,8 @@ namespace OniCommon
 				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(HoverFilter)));
 			harmony.Patch(AccessTools.Method(typeof(CellSelectionObject), "OnSpawn"),
 				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(SelectionFilter)));
+			harmony.Patch(AccessTools.Method(typeof(ToolParameterMenu), nameof(ToolParameterMenu.PopulateMenu)),
+				postfix: new HarmonyMethod(typeof(MixtureUi), nameof(DecorateMenu)));
 		}
 
 		private static void RegisterMixtures(OverlayScreen __instance)
@@ -591,17 +596,25 @@ namespace OniCommon
 					List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
 					if (choices != null && choices.Count > 0)
 					{
-						choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
+						Order(choices);
 						Get<Action<string>>(provider, "select")?.Invoke(choices[0][0]);
 						break;
 					}
 				}
 			}
 			Dictionary<string, object> stillActive = null;
+			// With few substances all groups are open in one list (their titles only name them); with many, a group opens
+			// on a click on its title.
+			var lists = new Dictionary<Dictionary<string, object>, List<string[]>>();
 			foreach (Dictionary<string, object> provider in groups)
 			{
-				List<string[]> choices = Get<Func<List<string[]>>>(provider, "choices")?.Invoke();
-				if (choices == null || choices.Count == 0)
+				lists[provider] = Get<Func<List<string[]>>>(provider, "choices")?.Invoke() ?? new List<string[]>();
+			}
+			collapsible = lists.Values.Sum(list => list.Count) > OneListUpTo;
+			foreach (Dictionary<string, object> provider in groups)
+			{
+				List<string[]> choices = lists[provider];
+				if (choices.Count == 0)
 				{
 					continue;
 				}
@@ -611,18 +624,20 @@ namespace OniCommon
 				{
 					expanded = id;
 				}
-				bool open = expanded == id;
+				bool open = !collapsible || expanded == id;
 				string heading = HeadingPrefix + id.ToUpperInvariant();
 				groupOfHeading[heading] = id;
-				// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals.
+				// The legend list does not show bold font (checked with a screenshot): the title is marked with capitals, in
+				// the group's colour; its switch is hidden (DecorateMenu).
 				string title = Text(provider, "title") ?? id;
-				AddString(heading, (open ? "– " : "+ ") + title.ToUpper(), title);
-				toggles.Add(new ToolParameterMenu.ToggleData(heading, ToolParameterMenu.ToggleState.Off));
-				choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
+				string colour = provider.TryGetValue("textColour", out object hex) ? hex as string : null;
+				AddString(heading, Coloured((collapsible ? (open ? "– " : "+ ") : "") + title.ToUpper(), colour, 0.25f), title);
+				toggles.Add(new ToolParameterMenu.ToggleData(heading, collapsible ? ToolParameterMenu.ToggleState.Off : ToolParameterMenu.ToggleState.Disabled));
+				Order(choices);
 				bool found = false;
 				foreach (string[] choice in choices)
 				{
-					AddString(choice[0], choice[1], choice[2]);
+					AddString(choice[0], Coloured(choice[1], colour, 0f), choice[2]);
 					bool on = choice[0] == current;
 					found = found || on;
 					if (open)
@@ -641,6 +656,92 @@ namespace OniCommon
 			}
 			activeMixtures = stillActive;
 			return toggles.ToArray();
+		}
+
+		private const int OneListUpTo = 16;
+		private static bool collapsible;
+
+		/// <summary>By the amount in the world, the largest first, if the provider gives it; otherwise by label.</summary>
+		private static void Order(List<string[]> choices)
+		{
+			if (choices.TrueForAll(choice => choice.Length > 3))
+			{
+				choices.Sort((a, b) => Amount(b).CompareTo(Amount(a)));
+			}
+			else
+			{
+				choices.Sort((a, b) => string.Compare(a[1], b[1], StringComparison.CurrentCulture));
+			}
+		}
+
+		private static double Amount(string[] choice)
+		{
+			return double.TryParse(choice[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double amount) ? amount : 0;
+		}
+
+		/// <summary>A label in a colour (hex RRGGBB), lightened towards white by the given share; as is without a colour.</summary>
+		private static string Coloured(string text, string hex, float lighten)
+		{
+			if (string.IsNullOrEmpty(hex) || !ColorUtility.TryParseHtmlString("#" + hex, out Color colour))
+			{
+				return text;
+			}
+			return $"<color=#{ColorUtility.ToHtmlStringRGB(Color.Lerp(colour, Color.white, lighten))}>{text}</color>";
+		}
+
+		/// <summary>
+		/// After the game fills the mixtures overlay's list: the group titles lose their switch (an empty box that cannot be
+		/// pressed looks untidy); with collapsible groups the title text itself takes the click.
+		/// </summary>
+		private static void DecorateMenu(ToolParameterMenu __instance)
+		{
+			try
+			{
+				OverlayLegend legend = OverlayLegend.Instance;
+				if (legend == null || !ReferenceEquals(legend.filterMenu, __instance) || !IsMixtures(legend.currentMode))
+				{
+					return;
+				}
+				foreach (KeyValuePair<string, ToolParameterMenu.Widget> pair in __instance.widgets)
+				{
+					if (!pair.Key.StartsWith(HeadingPrefix))
+					{
+						continue;
+					}
+					GameObject row = pair.Value.gameObject;
+					MultiToggle toggle = row.GetComponentInChildren<MultiToggle>();
+					if (toggle == null)
+					{
+						continue;
+					}
+					foreach (UnityEngine.UI.Image image in toggle.GetComponentsInChildren<UnityEngine.UI.Image>())
+					{
+						image.enabled = false;
+					}
+					LocText label = row.GetComponentInChildren<LocText>();
+					if (collapsible && label != null)
+					{
+						label.raycastTarget = true;
+						HeadingClick click = label.gameObject.GetComponent<HeadingClick>() ?? label.gameObject.AddComponent<HeadingClick>();
+						click.toggle = toggle;
+					}
+				}
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"{ModContext.Tag} mixture interface: the group titles could not be styled: {e.Message}");
+			}
+		}
+
+		/// <summary>A click on a group title's text works as a click on its (hidden) switch.</summary>
+		internal sealed class HeadingClick : MonoBehaviour, UnityEngine.EventSystems.IPointerClickHandler
+		{
+			public MultiToggle toggle;
+
+			public void OnPointerClick(UnityEngine.EventSystems.PointerEventData eventData)
+			{
+				toggle?.onClick?.Invoke();
+			}
 		}
 
 		/// <summary>A group title was clicked: its list opens or closes; the selection stays as it was.</summary>
