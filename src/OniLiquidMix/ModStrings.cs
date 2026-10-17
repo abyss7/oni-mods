@@ -16,6 +16,12 @@ namespace OniLiquidMix
 				public static LocString NAME = "Mixtures of liquids";
 				public static LocString TOOLTIP = "Liquids of one group mix in a cell instead of pushing each other aside: water, polluted water, salt water, brine, polluted brine, ethanol, nectar, brackene and ovolene; crude oil, petroleum, naphtha, phyto oil and biodiesel. A mixture freezes and boils by its components, pumps take its liquids in proportion. Liquid flow is then calculated by the mod instead of the game.";
 			}
+			public static class SORTBYAMOUNT
+			{
+				public static LocString NAME = "Liquids in the mixtures overlay by amount";
+				public static LocString TOOLTIP = "On: the liquids in the mixtures overlay list go from the most plentiful to the least. Off: by name.";
+			}
+
 			public static class DENSITY
 			{
 				public static LocString NAME = "Layers by density";

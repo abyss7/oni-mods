@@ -219,7 +219,8 @@ namespace OniGasMix
 				return choices;
 			}
 			int count = Math.Min(BitConverter.ToInt32(present, 0), MaxGases);
-			Dictionary<int, double> amounts = WorldAmounts();
+			// The amount goes with each choice only when the list is to be ordered by it (the mod option).
+			Dictionary<int, double> amounts = Mod.Options.SortByAmount ? WorldAmounts() : null;
 			for (int i = 0; i < count; i++)
 			{
 				int index = BitConverter.ToInt32(present, 4 * (1 + i));
@@ -230,9 +231,16 @@ namespace OniGasMix
 				Element element = ElementLoader.elements[index];
 				string key = KeyOf(element);
 				gasByKey[key] = index;
-				amounts.TryGetValue(index, out double amount);
-				choices.Add(new[] { key, STRINGS.UI.StripLinkFormatting(element.name), element.description,
-					amount.ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
+				string name = STRINGS.UI.StripLinkFormatting(element.name);
+				if (amounts != null)
+				{
+					amounts.TryGetValue(index, out double amount);
+					choices.Add(new[] { key, name, element.description, amount.ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
+				}
+				else
+				{
+					choices.Add(new[] { key, name, element.description });
+				}
 			}
 			return choices;
 		}

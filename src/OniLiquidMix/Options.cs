@@ -29,5 +29,10 @@ namespace OniLiquidMix
 		[Option(Key + "DENSITY.NAME", Key + "DENSITY.TOOLTIP")]
 		[JsonProperty]
 		public bool DensityLayers { get; set; } = true;
+
+		/// <summary>Order of the liquids in the mixtures overlay list: off by name, on by the amount in the colony's mixtures.</summary>
+		[Option(Key + "SORTBYAMOUNT.NAME", Key + "SORTBYAMOUNT.TOOLTIP")]
+		[JsonProperty]
+		public bool SortByAmount { get; set; }
 	}
 }

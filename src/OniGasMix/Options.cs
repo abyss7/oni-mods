@@ -18,6 +18,11 @@ namespace OniGasMix
 		[JsonProperty]
 		public bool MoveGases { get; set; } = true;
 
+		/// <summary>Order of the gases in the mixtures overlay list: off by name, on by the amount in the world.</summary>
+		[Option(Key + "SORTBYAMOUNT.NAME", Key + "SORTBYAMOUNT.TOOLTIP")]
+		[JsonProperty]
+		public bool SortByAmount { get; set; }
+
 		[Option(Key + "PRESENCEPERCENT.NAME", Key + "PRESENCEPERCENT.TOOLTIP")]
 		[Limit(1, 50)]
 		[JsonProperty]

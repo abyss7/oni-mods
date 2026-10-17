@@ -265,8 +265,16 @@ namespace OniLiquidMix
 				string key = KeyOf(element);
 				liquidByKey[key] = index;
 				// The survey's totals (kg in the colony's mixtures and pure cells): the list is ordered by them.
-				double amount = BitConverter.ToDouble(buffer, 8 + i * 16 + 8);
-				choices.Add(new[] { key, Name(element), element.description, amount.ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
+				// (only when the mod option asks for it).
+				if (Mod.Options.SortByAmount)
+				{
+					double amount = BitConverter.ToDouble(buffer, 8 + i * 16 + 8);
+					choices.Add(new[] { key, Name(element), element.description, amount.ToString("R", System.Globalization.CultureInfo.InvariantCulture) });
+				}
+				else
+				{
+					choices.Add(new[] { key, Name(element), element.description });
+				}
 			}
 			return choices;
 		}

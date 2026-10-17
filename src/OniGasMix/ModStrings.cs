@@ -34,6 +34,12 @@ namespace OniGasMix
 				public static LocString TOOLTIP = "On: the simulation's own gas movement is switched off; gases mix, spread by pressure and settle by weight under the layer's rules, and the cursor tooltip, the overlay, breathing, sources and consumers work with the composition of the mixture. Off: the layer only follows the gases and checks itself against the simulation without changing anything (for diagnostics).";
 			}
 
+			public static class SORTBYAMOUNT
+			{
+				public static LocString NAME = "Gases in the mixtures overlay by amount";
+				public static LocString TOOLTIP = "On: the gases in the mixtures overlay list go from the most plentiful in the world to the least. Off: by name.";
+			}
+
 			public static class PRESENCEPERCENT
 			{
 				public static LocString NAME = "Share at which a gas counts as present, %";
