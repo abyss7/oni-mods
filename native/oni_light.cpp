@@ -74,10 +74,10 @@ ONI_EXPORT void oni_light_cell(int32_t cell, float* out)
 	out[2] = engine.Through(cell);
 }
 
-// Self-check against the grid as it is now: see Engine::Check. out: 4 numbers.
-ONI_EXPORT void oni_light_check(const onilight::GridView* grid, float* out)
+// Self-check against the grid as it is now, over a rectangle of cells (inclusive): see Engine::Check. out: 4 numbers.
+ONI_EXPORT void oni_light_check(const onilight::GridView* grid, int32_t x0, int32_t y0, int32_t x1, int32_t y1, float* out)
 {
-	engine.Check(*grid, out);
+	engine.Check(*grid, { x0, y0, x1, y1 }, out);
 }
 
 // Counters since the grid was made: traces, rescales, removes, traced offsets, optics cells, transport cell-steps, written cells.
@@ -96,5 +96,5 @@ ONI_EXPORT void oni_light_stats(int64_t* out)
 // How far the light of a source can reach from its cell, in cells (what the game must watch for changes).
 ONI_EXPORT int32_t oni_light_reach(float range)
 {
-	return (int32_t)ceilf(1.5f * range) + onilight::Steps;
+	return (int32_t)ceilf(1.5f * std::min(range, onilight::MaxRange)) + 1 + onilight::Steps;
 }

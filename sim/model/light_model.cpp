@@ -368,7 +368,7 @@ int main(int argc, char** argv)
 			engine.Add(view, k, Desc(sources[k].x, sources[k].y, sources[k].lux, (float)sources[k].range, sources[k].cone));
 		}
 		float check[4];
-		engine.Check(view, check);
+		engine.Check(view, { 0, 0, world.w - 1, world.h - 1 }, check);
 		const onilight::Counters& st = engine.Stats();
 		printf("%d lights: build all  game %.2f ms, new %.2f ms;  update one  game %.1f us, new %.1f us, brightness only %.2f us;  "
 			"vs computing again: direct %.4f, light grid %.0f lux, vs all reflected light at once %.0f lux;  transport %.0f cell-steps per trace\n",

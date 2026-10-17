@@ -46,6 +46,7 @@ namespace onilight
 	constexpr float BuildingReflectance = 0.35f; // a solid building cell whose element is not solid (a closed door)
 	constexpr float MinLux = 0.5f;            // less direct or reflected light than this is not kept
 	constexpr float MinScattered = 0.05f;     // less scattered light than this is not kept
+	constexpr float MaxRange = 64.0f;         // a larger radius (another mod's light) is taken as this
 
 	enum State : uint8_t { Vacuum = 0, Gas = 1, Liquid = 2, Solid = 3 };
 	enum Shape : int32_t { Circle = 0, Cone = 1, Quad = 2 };
@@ -331,12 +332,13 @@ namespace onilight
 			return n;
 		}
 
-		// Self-check against the grid as it is now. out: [0] the largest difference of the direct light from tracing
-		// every source again; [1] of the light grid from computing every source again (lux); [2] of the light grid from
-		// carrying the reflected light of all sources at once over the whole grid (lux; differs by the light below
-		// MinScattered that each source drops); [3] the number of cells.
-		void Check(const GridView& g, float* out)
+		// Self-check against the grid as it is now, over the cells of `area`. out: [0] the largest difference of the direct
+		// light from tracing every source again; [1] of the light grid from computing every source again (lux); [2] of the
+		// light grid from carrying the reflected light of all sources at once over the whole grid (lux; differs by the light
+		// below MinScattered that each source drops); [3] the number of cells compared.
+		void Check(const GridView& g, Rect area, float* out)
 		{
+			area = Clip(area);
 			const size_t n = (size_t)w_ * h_;
 			std::vector<float> direct(n, 0.0f), scattered(n, 0.0f), all(n, 0.0f);
 			std::vector<Entry> d, sc, bounce, bounceAll;
@@ -362,16 +364,18 @@ namespace onilight
 			Transport(grid, bounceAll, sc);
 			for (const Entry& e : sc) all[e.cell] += e.value;
 			float dd = 0.0f, d1 = 0.0f, d2 = 0.0f;
-			for (size_t c = 0; c < n; c++)
-			{
-				dd = std::max(dd, fabsf(direct[c] - direct_[c]));
-				d1 = std::max(d1, fabsf((float)(Round(direct[c] + scattered[c]) - g.lightCount[c])));
-				d2 = std::max(d2, fabsf((float)(Round(direct[c] + all[c]) - g.lightCount[c])));
-			}
+			for (int y = area.y0; y <= area.y1; y++)
+				for (int x = area.x0; x <= area.x1; x++)
+				{
+					const size_t c = (size_t)y * w_ + x;
+					dd = std::max(dd, fabsf(direct[c] - direct_[c]));
+					d1 = std::max(d1, fabsf((float)(Round(direct[c] + scattered[c]) - g.lightCount[c])));
+					d2 = std::max(d2, fabsf((float)(Round(direct[c] + all[c]) - g.lightCount[c])));
+				}
 			out[0] = dd;
 			out[1] = d1;
 			out[2] = d2;
-			out[3] = (float)n;
+			out[3] = (float)area.Cells();
 		}
 
 	private:
@@ -409,10 +413,14 @@ namespace onilight
 			counters_.writtenCells += (int64_t)(s.direct.size() + s.scattered.size());
 		}
 
+		// Trees by radius, rounded to a quarter of a cell (a light bug's radius shrinks smoothly as it dims); kept for the
+		// last 64 radii.
 		const Tree& TreeFor(float range)
 		{
+			range = std::min(std::max(roundf(range * 4.0f) * 0.25f, 0.25f), MaxRange);
 			for (const Tree& t : trees_)
 				if (t.range == range) return t;
+			if (trees_.size() >= 64) trees_.clear();
 			trees_.emplace_back();
 			trees_.back().Build(range);
 			return trees_.back();
@@ -490,7 +498,7 @@ namespace onilight
 			Emitter em[64];
 			int ax, ay;
 			const int count = Emitters(d, em, ax, ay);
-			const int reach = (int)ceilf(1.5f * d.range);
+			const int reach = (int)ceilf(1.5f * std::min(d.range, MaxRange)) + 1;
 			return Clip({ std::min(em[0].x, em[count - 1].x) - reach, std::min(em[0].y, em[count - 1].y) - reach,
 				std::max(em[0].x, em[count - 1].x) + reach, std::max(em[0].y, em[count - 1].y) + reach });
 		}
