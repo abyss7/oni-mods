@@ -178,7 +178,7 @@ namespace OniLight
 		// Whether a light is not made by the colony: the player sees its light only where a Duplicant sees (Darkness).
 		private static readonly Dictionary<LightGridManager.LightGridEmitter, bool> naturalOf = new Dictionary<LightGridManager.LightGridEmitter, bool>();
 
-		// Lights a Duplicant carries (the glow stick): the colony's, and always seen, the Duplicant being in their light.
+		// Lights a Duplicant carries (the glow stick), and the glow in the water at the start: the colony's, and always seen.
 		private static readonly HashSet<LightGridManager.LightGridEmitter> carried = new HashSet<LightGridManager.LightGridEmitter>();
 
 		internal static bool IsCarried(LightGridManager.LightGridEmitter emitter) => !IsNatural(emitter) && carried.Contains(emitter);
@@ -202,21 +202,21 @@ namespace OniLight
 			if (owner != null)
 			{
 				naturalOf[emitter] = natural;
-				if (owner.GetComponent<MinionIdentity>() != null) carried.Add(emitter);
+				if (owner.GetComponent<MinionIdentity>() != null || owner.GetComponent<PoolGlow>() != null) carried.Add(emitter);
 			}
 			return natural;
 		}
 
-		/// <summary>A building the colony builds (from the build menu, a rocket module), the printing pod or a Duplicant's light.</summary>
+		/// <summary>A building the colony builds (from the build menu, a rocket module), the printing pod, a Duplicant's light or the glow in the water.</summary>
 		private static bool MadeByColony(Light2D light)
 		{
 			if (light == null)
 			{
 				return false;
 			}
-			if (light.GetComponent<MinionIdentity>() != null)
+			if (light.GetComponent<MinionIdentity>() != null || light.GetComponent<PoolGlow>() != null)
 			{
-				return true; // a light the Duplicant carries
+				return true; // a light the Duplicant carries, the glow in the water
 			}
 			BuildingComplete building = light.GetComponent<BuildingComplete>();
 			if (building == null || building.Def == null)

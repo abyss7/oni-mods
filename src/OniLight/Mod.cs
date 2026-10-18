@@ -36,6 +36,7 @@ namespace OniLight
 				Darkness.Apply(harmony);
 				DarkWork.Apply(harmony);
 				GlowStick.Apply(harmony);
+				if (Options.PoolGlow) PoolGlow.Apply(harmony);
 			}
 			LightCases.Apply(harmony);
 			Debug.Log($"[OniLight] {assembly.GetName().Version}, {LightNative.Info}; blackout {(Options.Blackout ? "on" : "off")}");

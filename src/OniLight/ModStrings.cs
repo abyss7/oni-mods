@@ -14,7 +14,13 @@ namespace OniLight
 			public static class BLACKOUT
 			{
 				public static LocString NAME = "Blackout";
-				public static LocString TOOLTIP = "You see only what is lit: where there is no light, nothing shows, and dim light shows dimly. The light of the colony's own lamps shows while a Duplicant can walk into it; the light of the sun, creatures, plants and glowing rocks shows only where a Duplicant sees it at that moment. Dig and build orders need some light. Duplicants work slower in dim light and much slower in the dark, move slower in the dark, cannot do research, art, medicine, cooking or machine work in total darkness, and grow stressed if awake in it.";
+				public static LocString TOOLTIP = "You see only what is lit: where there is no light, nothing shows, and dim light shows dimly. The light of the colony's own lamps shows while a Duplicant can walk into it; the light of the sun, creatures, plants and glowing rocks shows only where a Duplicant sees it at that moment. Dig and build orders need some light. Duplicants work slower in dim light and much slower in the dark, move slower in the dark, cannot do research, art, medicine, cooking or machine work in total darkness, and grow stressed if awake in it. The first Duplicants carry a glow stick while their New Hope lasts.";
+			}
+
+			public static class POOLGLOW
+			{
+				public static LocString NAME = "Glowing water at the start";
+				public static LocString TOOLTIP = "With Blackout: while the first Duplicants' New Hope lasts, a glow lies at the bottom of the clean water pool nearest the Printing Pod, as if someone had dropped a glow stick there, so you can find the water. It fades out with their glow sticks. Its light shows whether or not a Duplicant can reach it.";
 			}
 		}
 

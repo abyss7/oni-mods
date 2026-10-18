@@ -18,5 +18,10 @@ namespace OniLight
 		[Option(Key + "BLACKOUT.NAME", Key + "BLACKOUT.TOOLTIP")]
 		[JsonProperty]
 		public bool Blackout { get; set; } = true;
+
+		/// <summary>With Blackout: a glow at the bottom of the clean water pool nearest the printing pod while New Hope lasts.</summary>
+		[Option(Key + "POOLGLOW.NAME", Key + "POOLGLOW.TOOLTIP")]
+		[JsonProperty]
+		public bool PoolGlow { get; set; } = true;
 	}
 }

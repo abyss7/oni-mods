@@ -32,9 +32,9 @@ namespace OniLight
 		// cell above B.
 		private const int RoomA = 3, RoomB = 29, RoomC = 3, RoomWidth = 20, RoomHeight = 8, Floor = 2, FloorC = 14;
 		private const int Bug = 29, Gas = 34, GasWidth = 10, Chamber = 25;
-		// The glow sticks: the stick's red at full light, half way through fading and nearly out; for comparison a
-		// yellow-green stick and the game's green shine bug.
-		private static readonly Color[] GlowColours = { GlowStick.Colour, GlowStick.Colour, GlowStick.Colour, GlowStick.YellowGreen, new Color(0.43f, 1f, 0.53f) };
+		// The glow sticks: the stick's green at full light, half way through fading and nearly out; for comparison the
+		// glow in the water and the game's green shine bug.
+		private static readonly Color[] GlowColours = { GlowStick.Colour, GlowStick.Colour, GlowStick.Colour, PoolGlow.Colour, new Color(0.43f, 1f, 0.53f) };
 		private static readonly float[] GlowLeft = { 1800f, GlowStick.FadeFor * 0.6f, GlowStick.FadeFor * 0.3f, 1800f, 1800f };
 
 		private static int phase, originX, originY, frame;
@@ -204,6 +204,14 @@ namespace OniLight
 							Picture("glow");
 						}
 						else if (frame == 201)
+						{
+							if (Grid.IsValidCell(PoolGlow.Cell)) CameraController.Instance.SnapTo(Grid.CellToPosCCC(PoolGlow.Cell, Grid.SceneLayer.Background), 10f);
+						}
+						else if (frame == 250)
+						{
+							if (Grid.IsValidCell(PoolGlow.Cell)) Picture("pool");
+						}
+						else if (frame == 251)
 						{
 							LightGrid.Report("after the scenes");
 							Debug.Log($"{ModContext.Tag} LightCases: {passed} passed, {failed} failed; closing the game");
@@ -621,6 +629,26 @@ namespace OniLight
 			dupe.transform.SetPosition(Grid.CellToPosCBC(cell, Grid.SceneLayer.Move));
 		}
 
+		/// <summary>The glow at the bottom of the clean water pool nearest the printing pod: lit and shown, with New Hope.</summary>
+		private static void PoolCheck()
+		{
+			if (!Mod.Options.Blackout || !Mod.Options.PoolGlow)
+			{
+				Debug.Log($"{ModContext.Tag} LightCases: the glow in the water: skipped (the option is off)");
+				return;
+			}
+			int cell = PoolGlow.Cell;
+			if (!Grid.IsValidCell(cell))
+			{
+				Debug.Log($"{ModContext.Tag} LightCases: the glow in the water: skipped (no pool of clean water found; searches {PoolGlow.Searches})");
+				return;
+			}
+			Grid.CellToXY(cell, out int x, out int y);
+			int lux = DarkWork.Lux(cell), above = DarkWork.Lux(Grid.CellAbove(cell));
+			Expect("the glow in the water lights its pool and shows", Grid.Element[cell].id == SimHashes.Water && lux >= 100 && !Darkness.Dark(cell),
+				$"at {x},{y}: {lux} lux, a cell up {above}, dark to the player {Darkness.Dark(cell)}, charge {GlowStick.ChargeFor(GlowStick.HopeLeft()):F2}");
+		}
+
 		/// <summary>What darkness does to a Duplicant: "In the Dark" after a minute awake in it; work speed by the light.</summary>
 		private static void DarkChecks()
 		{
@@ -633,6 +661,7 @@ namespace OniLight
 			}
 			Expect("glow sticks light the dark", glowDupes.Count > 0 && glowDupes[0] != null && DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(glowDupes[0]))) >= 300,
 				string.Join("; ", glows));
+			PoolCheck();
 			int pocket = Cell(RoomB + RoomWidth + 2, Floor);
 			Effects effects = darkDupe.GetComponent<Effects>();
 			bool asleep = darkDupe.HasTag(GameTags.Asleep);

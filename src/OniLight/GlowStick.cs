@@ -22,12 +22,10 @@ namespace OniLight
 		internal const string NewHopeId = "AnewHope";
 
 		/// <summary>
-		/// The light's colour: the red of the chemical light sticks dropped in caves (glowing near 620 nm). The game's
-		/// lights have grey rays and only a faint coloured glow, so the stick's rays take its colour: else the colour
-		/// hardly shows.
+		/// The light's colour: the green of a chemical light stick. The game's lights have grey rays and only a faint
+		/// coloured glow, so the stick's rays take its colour: else the colour hardly shows.
 		/// </summary>
-		internal static Color Colour = new Color(1f, 0.2f, 0.12f);
-		internal static readonly Color YellowGreen = new Color(0.62f, 1f, 0.28f);
+		internal static Color Colour = new Color(0.24f, 1f, 0.47f);
 
 		/// <summary>The stick has gone out (for good).</summary>
 		[Serialize] public bool gone;
@@ -59,12 +57,26 @@ namespace OniLight
 				return 0f;
 			}
 			EffectInstance hope = effects.Get(NewHopeId);
-			if (hope == null)
-			{
-				return 0f;
-			}
-			float t = hope.timeRemaining / FadeFor;
+			return hope == null ? 0f : ChargeFor(hope.timeRemaining);
+		}
+
+		/// <summary>The light by the time New Hope has left, 0..1: full until the last FadeFor seconds, then smoothly down.</summary>
+		internal static float ChargeFor(float left)
+		{
+			float t = left / FadeFor;
 			return t >= 1f ? 1f : t <= 0f ? 0f : t * t * (3f - 2f * t);
+		}
+
+		/// <summary>The most New Hope any living Duplicant has left, s (0: none has it).</summary>
+		internal static float HopeLeft()
+		{
+			float most = 0f;
+			foreach (MinionIdentity minion in Components.LiveMinionIdentities.Items)
+			{
+				EffectInstance hope = minion != null ? minion.GetComponent<Effects>()?.Get(NewHopeId) : null;
+				if (hope != null) most = Mathf.Max(most, hope.timeRemaining);
+			}
+			return most;
 		}
 
 		public override void OnSpawn()
