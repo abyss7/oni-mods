@@ -36,6 +36,7 @@ namespace OniFixes
 				(nameof(ConveyorOverlayItems), Options.ConveyorOverlayItems, ConveyorOverlayItems.Apply),
 				(nameof(ConveyorArrivals), Options.ConveyorArrivals, ConveyorArrivals.Apply),
 				(nameof(QuickPills), Options.QuickPills, QuickPills.Apply),
+				(nameof(OuthouseMeter), Options.OuthouseMeter, OuthouseMeter.Apply),
 			};
 			List<string> applied = new List<string>();
 			foreach ((string name, bool enabled, Action<Harmony> apply) in fixes)

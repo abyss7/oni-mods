@@ -35,6 +35,12 @@ namespace OniFixes
 				public static LocString TOOLTIP = "Duplicants take a pill in 2 seconds instead of 10: they sit down, swallow it and get up, instead of sitting frozen with puffed cheeks. The pill works the same.";
 			}
 
+			public static class OUTHOUSEMETER
+			{
+				public static LocString NAME = "Outhouse meter after cleaning";
+				public static LocString TOOLTIP = "The fill meter of an outhouse empties as soon as it is cleaned, instead of staying full until the next visit.";
+			}
+
 			public static class REDRAWONANIMSTART
 			{
 				public static LocString NAME = "Redraw animations when they start";

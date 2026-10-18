@@ -240,7 +240,8 @@ namespace OniDup
 				return;
 			}
 			lastReport = now;
-			Debug.Log($"{ModContext.Tag} work: stopped after a move {escapes}, swings finished early {swings}, started digs and builds resumed {resumes}, turned on the way to a cell that still reaches the work {rerouted}, stopped working through a wall {walls}");
+			Debug.Log($"{ModContext.Tag} work: stopped after a move {escapes}, swings finished early {swings}, started digs and builds resumed {resumes}, turned on the way to a cell that still reaches the work {rerouted}, stopped working through a wall {walls}; " +
+				$"tiles: built-in cells left out of {DupBuild.filteredTables} work tables, work held for someone inside {DupBuild.heldTicks} ticks, made solid at once {DupBuild.earlySolid} cells");
 		}
 	}
 }

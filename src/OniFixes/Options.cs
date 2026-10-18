@@ -40,6 +40,10 @@ namespace OniFixes
 		[JsonProperty]
 		public bool QuickPills { get; set; } = true;
 
+		[Option(Key + "OUTHOUSEMETER.NAME", Key + "OUTHOUSEMETER.TOOLTIP", Key + "CATEGORY.FIXES")]
+		[JsonProperty]
+		public bool OuthouseMeter { get; set; } = true;
+
 		[Option(Key + "DEMANDDRIVENFETCH.NAME", Key + "DEMANDDRIVENFETCH.TOOLTIP", Key + "CATEGORY.DUPLICANTS")]
 		[JsonProperty]
 		public bool DemandDrivenFetch { get; set; } = true;
