@@ -28,8 +28,14 @@ namespace OniDup
 	/// - P below 6.3 kPa (the Armstrong limit): body fluids boil, a mask does not help: passes out in 15 s, takes 0.5 damage
 	///   per second ("Ebullism").
 	/// After passing out the game's own suffocation goes on: 120 s to death, other duplicants can resuscitate.
-	/// A drop of the average pressure around the head by more than half and more than 30 kPa within 2 s gives "Decompression
-	/// Injury" (stress +20% per cycle for half a cycle, the game's popped eardrums reaction) and does 10 damage.
+	/// A sharp drop of the pressure around the head (by Boyle's law what hurts is the ratio, not the difference), lasting at
+	/// least 1.2 s (a passing dip as gas runs into a cell just dug is not one), by more than 30 kPa within about 3 s:
+	/// - 2-4 times, or more but staying above 25 kPa: "Popped Ears", no damage (stress +5% per cycle for a quarter cycle, the
+	///   game's popped eardrums reaction);
+	/// - 4 times and more, down below 25 kPa (a breach into a vacuum, an aircraft window blown out): "Decompression Injury",
+	///   5 damage at 4 times, 10 at 8, 15 at 16, 20 at 32 and more (stress +20% per cycle for half a cycle).
+	/// Cells that were solid or liquid in the last 2 s are left out of the pressure around: a cell just dug is empty until the
+	/// gas around runs into it, the air around has not got thinner.
 	///
 	/// Carbon Dioxide, by its partial pressure in the air the duplicant breathes (only while breathing: in pure Carbon Dioxide a
 	/// duplicant holds their breath and is not poisoned; a mask or a suit protects): 1-3 kPa stuffy air, 3-5 a headache, 5-8
@@ -47,7 +53,7 @@ namespace OniDup
 		internal const float KiloPascalPerKg = 101.325f / 1.8f;
 		internal const float Vapour = 6.3f;
 		internal const float Normal = 15f, Thin = 11f, Hypoxic = 8f, Severe = 6f;
-		internal const string HypoxiaId = "OniDupHypoxia", SevereHypoxiaId = "OniDupSevereHypoxia", EbullismId = "OniDupEbullism", BarotraumaId = "OniDupBarotrauma";
+		internal const string HypoxiaId = "OniDupHypoxia", SevereHypoxiaId = "OniDupSevereHypoxia", EbullismId = "OniDupEbullism", BarotraumaId = "OniDupBarotrauma", PoppedEarsId = "OniDupPoppedEars";
 		internal const float Stuffy = 1f, Headache = 3f, Poisoning = 5f, PassingOut = 8f; // kPa of Carbon Dioxide
 		internal const float OxygenRich = 2f * 101.325f, OxygenToxic = 3f * 101.325f;     // kPa of Oxygen in the lungs
 		internal const string StuffyId = "OniDupStuffyAir", HeadacheId = "OniDupCarbonDioxideHeadache", PoisoningId = "OniDupCarbonDioxidePoisoning",
@@ -55,6 +61,9 @@ namespace OniDup
 
 		internal static string Mode { get; private set; } = "off";
 		internal static StatusItem VacuumStatus { get; private set; }
+		/// <summary>The air's status items, the worst first: one of them is shown on a duplicant, with the numbers.</summary>
+		internal static StatusItem CarbonDioxideOutStatus, NoOxygenStatus, BuriedStatus, GaspingStatus, PoisoningStatus, HypoxiaStatus, HeadacheStatus,
+			ToxicityStatus, StuffyStatus, DecompressionStatus, PoppedEarsStatus;
 		internal static Death Decompression { get; private set; }
 		internal static Death CarbonDioxide { get; private set; }
 
@@ -225,9 +234,23 @@ namespace OniDup
 			var barotrauma = new Effect(BarotraumaId, name, ONIDUP.EFFECTS.BAROTRAUMA.TOOLTIP, 300f, true, true, true, "anim_react_popped_ears_kanim", -1f);
 			barotrauma.Add(new AttributeModifier(stress, 20f / 600f, name));
 			Db.Get().effects.Add(barotrauma);
+			name = ONIDUP.EFFECTS.POPPEDEARS.NAME;
+			var ears = new Effect(PoppedEarsId, name, ONIDUP.EFFECTS.POPPEDEARS.TOOLTIP, 150f, true, true, true, "anim_react_popped_ears_kanim", -1f);
+			ears.Add(new AttributeModifier(stress, 5f / 600f, name));
+			Db.Get().effects.Add(ears);
 
-			VacuumStatus = new StatusItem("OniDupVacuum", ONIDUP.STATUSITEMS.VACUUM.NAME, ONIDUP.STATUSITEMS.VACUUM.TOOLTIP, "",
-				StatusItem.IconType.Exclamation, NotificationType.DuplicantThreatening, false, OverlayModes.None.ID);
+			VacuumStatus = AirStatus("OniDupVacuum", ONIDUP.STATUSITEMS.VACUUM.NAME, ONIDUP.STATUSITEMS.VACUUM.TOOLTIP, NotificationType.DuplicantThreatening);
+			CarbonDioxideOutStatus = AirStatus("OniDupCarbonDioxideOut", ONIDUP.STATUSITEMS.CO2PASSINGOUT.NAME, ONIDUP.STATUSITEMS.CO2PASSINGOUT.TOOLTIP, NotificationType.DuplicantThreatening);
+			NoOxygenStatus = AirStatus("OniDupNoOxygen", ONIDUP.STATUSITEMS.NOOXYGEN.NAME, ONIDUP.STATUSITEMS.NOOXYGEN.TOOLTIP, NotificationType.DuplicantThreatening);
+			BuriedStatus = AirStatus("OniDupBuriedHead", ONIDUP.STATUSITEMS.BURIED.NAME, ONIDUP.STATUSITEMS.BURIED.TOOLTIP, NotificationType.DuplicantThreatening);
+			GaspingStatus = AirStatus("OniDupGasping", ONIDUP.STATUSITEMS.GASPING.NAME, ONIDUP.STATUSITEMS.GASPING.TOOLTIP, NotificationType.DuplicantThreatening);
+			PoisoningStatus = AirStatus("OniDupCarbonDioxidePoisoning", ONIDUP.STATUSITEMS.CO2POISONING.NAME, ONIDUP.STATUSITEMS.CO2POISONING.TOOLTIP, NotificationType.Bad);
+			HypoxiaStatus = AirStatus("OniDupHypoxia", ONIDUP.STATUSITEMS.HYPOXIA.NAME, ONIDUP.STATUSITEMS.HYPOXIA.TOOLTIP, NotificationType.Bad);
+			HeadacheStatus = AirStatus("OniDupCarbonDioxideHeadache", ONIDUP.STATUSITEMS.CO2HEADACHE.NAME, ONIDUP.STATUSITEMS.CO2HEADACHE.TOOLTIP, NotificationType.BadMinor);
+			ToxicityStatus = AirStatus("OniDupOxygenToxicity", ONIDUP.STATUSITEMS.OXYGENTOXICITY.NAME, ONIDUP.STATUSITEMS.OXYGENTOXICITY.TOOLTIP, NotificationType.Bad);
+			StuffyStatus = AirStatus("OniDupStuffyAir", ONIDUP.STATUSITEMS.STUFFYAIR.NAME, ONIDUP.STATUSITEMS.STUFFYAIR.TOOLTIP, NotificationType.BadMinor);
+			DecompressionStatus = AirStatus("OniDupDecompression", ONIDUP.STATUSITEMS.DECOMPRESSION.NAME, ONIDUP.STATUSITEMS.DECOMPRESSION.TOOLTIP, NotificationType.Bad);
+			PoppedEarsStatus = AirStatus("OniDupPoppedEars", ONIDUP.STATUSITEMS.POPPEDEARS.NAME, ONIDUP.STATUSITEMS.POPPEDEARS.TOOLTIP, NotificationType.BadMinor);
 			Decompression = new Death("OniDupDecompression", Db.Get().Deaths, ONIDUP.DEATHS.DECOMPRESSION.NAME, ONIDUP.DEATHS.DECOMPRESSION.DESCRIPTION,
 				"death_suffocation", "dead_on_back");
 			CarbonDioxide = new Death("OniDupCarbonDioxide", Db.Get().Deaths, ONIDUP.DEATHS.CARBONDIOXIDE.NAME, ONIDUP.DEATHS.CARBONDIOXIDE.DESCRIPTION,
@@ -272,6 +295,20 @@ namespace OniDup
 			var seizure = new Effect(SeizureId, name, ONIDUP.EFFECTS.OXYGENSEIZURE.TOOLTIP, 120f, true, true, true);
 			seizure.Add(new AttributeModifier(stress, 20f / 600f, name));
 			Db.Get().effects.Add(seizure);
+		}
+
+		/// <summary>
+		/// A status item of the air with the numbers of the duplicant's air in its tooltip; an icon over the head only for what
+		/// threatens their life.
+		/// </summary>
+		private static StatusItem AirStatus(string id, string name, string tooltip, NotificationType type)
+		{
+			bool threat = type == NotificationType.DuplicantThreatening;
+			return new StatusItem(id, name, tooltip, "", threat ? StatusItem.IconType.Exclamation : StatusItem.IconType.Info, type, false, OverlayModes.None.ID,
+				showWorldIcon: threat)
+			{
+				resolveTooltipCallback = (text, data) => data is DupAirMonitor monitor ? monitor.Explain(text) : text,
+			};
 		}
 
 		/// <summary>
@@ -385,8 +422,11 @@ namespace OniDup
 	/// <summary>Per-duplicant state of DupAir: the zone, the breath drain and the pressure history for decompression.</summary>
 	internal sealed class DupAirMonitor : KMonoBehaviour, ISim200ms
 	{
-		private const int HistorySamples = 10; // 2 s at 0.2 s
-		private const float DecompressionDrop = 30f, DecompressionCooldown = 10f, DecompressionDamage = 10f, EbullismDamagePerSecond = 0.5f;
+		// The pressure around, every 0.2 s: the last 1.2 s is "now" (the highest of it: a drop must last), the 3 s before it
+		// "before" (the highest of it).
+		private const int HistorySamples = 21, RecentSamples = 6;
+		private const float DecompressionDrop = 30f, DecompressionCooldown = 10f, EbullismDamagePerSecond = 0.5f;
+		private const float EarsRatio = 2f, InjuryRatio = 4f, InjuryBelow = 25f, OpenedFor = 2f;
 		// Ebullism damage comes in portions: every hit plays the game's flinch, every 0.2 s it would never stop.
 		private const float EbullismDamageEvery = 5f;
 		private const float VacuumBreathSeconds = 15f, SevereBreathSeconds = 180f, CarbonDioxideBreathSeconds = 60f;
@@ -466,7 +506,6 @@ namespace OniDup
 			SetEffect(DupAir.HypoxiaId, Zone == AirZone.Hypoxia);
 			SetEffect(DupAir.SevereHypoxiaId, Zone == AirZone.Severe);
 			SetEffect(DupAir.EbullismId, Zone == AirZone.Vacuum);
-			SetVacuumStatus(Zone == AirZone.Vacuum);
 			// Carbon Dioxide is inhaled only while breathing.
 			bool breathing = Zone == AirZone.Normal || Zone == AirZone.Thin || Zone == AirZone.Hypoxia;
 			float carbon = breathing ? CarbonDioxide : 0f;
@@ -475,6 +514,9 @@ namespace OniDup
 			SetEffect(DupAir.HeadacheId, CarbonDioxideLevel == 2);
 			SetEffect(DupAir.PoisoningId, CarbonDioxideLevel >= 3);
 			OxygenExcess(dt);
+			SetStatus(ref airStatus, ref airShown, WorstAir());
+			SetStatus(ref injuryStatus, ref injuryShown, effects == null ? null : effects.HasEffect(DupAir.BarotraumaId) ? DupAir.DecompressionStatus
+				: effects.HasEffect(DupAir.PoppedEarsId) ? DupAir.PoppedEarsStatus : null);
 			if (Blocked && !wasBlocked)
 			{
 				DupAir.HoldBreath(breather);
@@ -560,23 +602,55 @@ namespace OniDup
 			return AirZone.NoOxygen;
 		}
 
-		private System.Guid vacuumStatus;
+		private System.Guid airStatus, injuryStatus;
+		private StatusItem airShown, injuryShown;
+		private float decompressionFrom, decompressionTo, decompressionDamage;
 
-		private void SetVacuumStatus(bool on)
+		/// <summary>The worst of the duplicant's air, for the status list (the effects hold the penalties).</summary>
+		private StatusItem WorstAir()
 		{
-			if (selectable == null || DupAir.VacuumStatus == null)
+			switch (Zone)
+			{
+				case AirZone.Vacuum: return DupAir.VacuumStatus;
+				case AirZone.Buried: return DupAir.BuriedStatus;
+				case AirZone.Protected: return null;
+			}
+			if (CarbonDioxideLevel >= 4) return DupAir.CarbonDioxideOutStatus;
+			if (Zone == AirZone.NoOxygen) return DupAir.NoOxygenStatus;
+			if (Zone == AirZone.Severe) return DupAir.GaspingStatus;
+			if (CarbonDioxideLevel == 3) return DupAir.PoisoningStatus;
+			if (Zone == AirZone.Hypoxia) return DupAir.HypoxiaStatus;
+			if (CarbonDioxideLevel == 2) return DupAir.HeadacheStatus;
+			if (effects != null && effects.HasEffect(DupAir.ToxicityId)) return DupAir.ToxicityStatus;
+			if (CarbonDioxideLevel == 1) return DupAir.StuffyStatus;
+			return null;
+		}
+
+		private void SetStatus(ref System.Guid handle, ref StatusItem shown, StatusItem wanted)
+		{
+			if (selectable == null || shown == wanted)
 			{
 				return;
 			}
-			if (on && vacuumStatus == System.Guid.Empty)
+			if (handle != System.Guid.Empty)
 			{
-				vacuumStatus = selectable.AddStatusItem(DupAir.VacuumStatus, this);
+				selectable.RemoveStatusItem(handle);
+				handle = System.Guid.Empty;
 			}
-			else if (!on && vacuumStatus != System.Guid.Empty)
+			shown = wanted;
+			if (wanted != null)
 			{
-				selectable.RemoveStatusItem(vacuumStatus);
-				vacuumStatus = System.Guid.Empty;
+				handle = selectable.AddStatusItem(wanted, this);
 			}
+		}
+
+		/// <summary>A status item's tooltip with this duplicant's numbers.</summary>
+		internal string Explain(string text)
+		{
+			float hold = VacuumBreathSeconds + 95f * Mathf.Min(1f, Pressure / 101.325f);
+			return text.Replace("{P}", Pressure.ToString("F1")).Replace("{O2}", OxygenPressure.ToString("F1")).Replace("{CO2}", CarbonDioxide.ToString("F1"))
+				.Replace("{HOLD}", hold.ToString("F0")).Replace("{FROM}", decompressionFrom.ToString("F0")).Replace("{TO}", decompressionTo.ToString("F0"))
+				.Replace("{RATIO}", (decompressionFrom / Mathf.Max(decompressionTo, 0.1f)).ToString("F1")).Replace("{DAMAGE}", decompressionDamage.ToString("F0"));
 		}
 
 		private void SetEffect(string id, bool on)
@@ -691,12 +765,16 @@ namespace OniDup
 			Db.Get().Amounts.Stress.Lookup(gameObject)?.ApplyDelta(SeizureStress);
 		}
 
+		// Cells around the head last seen solid or liquid, and when (a cell just dug is not yet part of the air around).
+		private readonly System.Collections.Generic.Dictionary<int, float> closedAt = new System.Collections.Generic.Dictionary<int, float>();
+
 		/// <summary>
 		/// Pressure around the head: the average over the gas and vacuum cells of the 3x3 square around it. Neighbouring cells of
 		/// the game's gas often differ a lot in pressure (a thin cell by a door), while real air evens out at once; a single
-		/// thin cell on the way is not a decompression, leaving a pressurised area is.
+		/// thin cell on the way is not a decompression, leaving a pressurised area is. A cell that was solid or liquid within
+		/// OpenedFor seconds counts only once it holds gas.
 		/// </summary>
-		private float AmbientPressure()
+		private float AmbientPressure(float now)
 		{
 			int head = Grid.CellAbove(Grid.PosToCell(this));
 			float sum = 0f;
@@ -718,14 +796,33 @@ namespace OniDup
 					}
 					else if (element.IsVacuum)
 					{
-						count++;
+						if (!closedAt.TryGetValue(around, out float closed) || now - closed >= OpenedFor)
+						{
+							count++;
+						}
+					}
+					else
+					{
+						closedAt[around] = now;
 					}
 				}
+			}
+			if (closedAt.Count > 32)
+			{
+				var old = new System.Collections.Generic.List<int>();
+				foreach (var entry in closedAt)
+				{
+					if (now - entry.Value >= OpenedFor) old.Add(entry.Key);
+				}
+				foreach (int cell in old) closedAt.Remove(cell);
 			}
 			return count == 0 ? 0f : sum / count;
 		}
 
-		/// <summary>A sharp drop of pressure around the duplicant: Decompression Injury and damage.</summary>
+		/// <summary>
+		/// A sharp drop of pressure around the duplicant that lasts: Popped Ears, or Decompression Injury with damage by how many
+		/// times the pressure fell.
+		/// </summary>
 		private void Decompression(bool protectedHead)
 		{
 			// In a sealed suit, a transit tube or with the head in a liquid (a liquid airlock) the air around tells nothing:
@@ -735,23 +832,44 @@ namespace OniDup
 				historyCount = 0;
 				return;
 			}
-			float pressure = AmbientPressure();
-			float highest = pressure;
-			for (int i = 0; i < historyCount; i++)
-			{
-				highest = Mathf.Max(highest, history[i]);
-			}
-			history[historyAt] = pressure;
+			float now = GameClock.Instance.GetTime();
+			history[historyAt] = AmbientPressure(now);
 			historyAt = (historyAt + 1) % HistorySamples;
 			historyCount = Math.Min(historyCount + 1, HistorySamples);
-			if (highest - pressure < DecompressionDrop || pressure > 0.5f * highest || GameClock.Instance.GetTime() - lastDecompression < DecompressionCooldown)
+			if (historyCount <= RecentSamples || now - lastDecompression < DecompressionCooldown)
 			{
 				return;
 			}
-			lastDecompression = GameClock.Instance.GetTime();
+			// Newest first: the recent samples, then the ones before.
+			float current = 0f, before = 0f;
+			for (int i = 0; i < historyCount; i++)
+			{
+				float sample = history[(historyAt - 1 - i + HistorySamples) % HistorySamples];
+				if (i < RecentSamples) current = Mathf.Max(current, sample);
+				else before = Mathf.Max(before, sample);
+			}
+			if (before - current < DecompressionDrop || current * EarsRatio > before)
+			{
+				return;
+			}
+			float ratio = before / Mathf.Max(current, 0.1f);
+			bool injury = ratio >= InjuryRatio && current < InjuryBelow;
+			lastDecompression = now;
 			historyCount = 0;
-			effects?.Add(DupAir.BarotraumaId, true);
-			health?.Damage(DecompressionDamage);
+			decompressionFrom = before;
+			decompressionTo = current;
+			decompressionDamage = injury ? Mathf.Clamp(5f * Mathf.Log(ratio / 2f, 2f), 5f, 20f) : 0f;
+			Debug.Log($"{ModContext.Tag} air: {gameObject.GetProperName()} at {Grid.PosToXY(transform.GetPosition())}: pressure {before:F0} -> {current:F0} kPa " +
+				$"({ratio:F1} times), {(injury ? $"decompression injury, {decompressionDamage:F1} damage" : "popped ears")}");
+			if (injury)
+			{
+				effects?.Add(DupAir.BarotraumaId, true);
+				health?.Damage(decompressionDamage);
+			}
+			else
+			{
+				effects?.Add(DupAir.PoppedEarsId, true);
+			}
 		}
 	}
 }

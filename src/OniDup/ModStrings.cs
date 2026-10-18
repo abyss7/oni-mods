@@ -66,6 +66,12 @@ namespace OniDup
 				public static LocString TOOLTIP = "Breathing <link=\"OXYGEN\">Oxygen</link> at an extreme pressure gave this Duplicant a seizure";
 			}
 
+			public static class POPPEDEARS
+			{
+				public static LocString NAME = "Popped Ears";
+				public static LocString TOOLTIP = "A quick drop in pressure made this Duplicant's ears pop painfully";
+			}
+
 			public static class BAROTRAUMA
 			{
 				public static LocString NAME = "Decompression Injury";
@@ -85,10 +91,78 @@ namespace OniDup
 
 		public static class STATUSITEMS
 		{
+			// The air a Duplicant is in, the worst of it shown: {P} the pressure at the head, {O2} the Oxygen reaching the lungs,
+			// {CO2} the Carbon Dioxide in the air breathed (kPa), {HOLD} how long the breath lasts here (s).
 			public static class VACUUM
 			{
 				public static LocString NAME = "Exposed to Vacuum";
-				public static LocString TOOLTIP = "This Duplicant is in a near-vacuum and will pass out within seconds\n\nOnly a sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> protects against vacuum";
+				public static LocString TOOLTIP = "This Duplicant is in a near-vacuum: {P} kPa around the head (below 6.3 kPa the moisture in the body boils)\n\nTakes 0.5 damage a second and passes out within 15 seconds, then dies unless brought into air\n\nOnly a sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> protects against vacuum, an <link=\"OXYGENMASK\">Oxygen Mask</link> does not";
+			}
+
+			public static class CO2PASSINGOUT
+			{
+				public static LocString NAME = "Overcome by CO<sub>2</sub>";
+				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> (8 kPa and more knocks a Duplicant out)\n\nPasses out within a minute, then dies of Carbon Dioxide poisoning unless brought into clean air\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects from it";
+			}
+
+			public static class NOOXYGEN
+			{
+				public static LocString NAME = "No Oxygen to Breathe";
+				public static LocString TOOLTIP = "Only {O2} kPa of <link=\"OXYGEN\">Oxygen</link> reaches this Duplicant's lungs here (6 kPa is the least one can breathe; the pressure around is {P} kPa)\n\nHolding their breath: at this pressure it lasts about {HOLD} seconds, then they pass out and die unless brought into air";
+			}
+
+			public static class BURIED
+			{
+				public static LocString NAME = "Buried Head";
+				public static LocString TOOLTIP = "This Duplicant's head is buried and they cannot breathe\n\nHolding their breath for about 110 seconds, then they pass out and die unless dug out in time";
+			}
+
+			public static class GASPING
+			{
+				public static LocString NAME = "Gasping for Air";
+				public static LocString TOOLTIP = "Only {O2} kPa of <link=\"OXYGEN\">Oxygen</link> reaches this Duplicant's lungs (15 kPa and more is normal, below 8 kPa one cannot breathe; the pressure around is {P} kPa)\n\nThe breath runs out in about 3 minutes, then they pass out and die unless brought into better air\n\nThe air needs more pressure or a richer share of <link=\"OXYGEN\">Oxygen</link>";
+			}
+
+			public static class CO2POISONING
+			{
+				public static LocString NAME = "CO<sub>2</sub> Poisoning";
+				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: dizzy, slow and stressed (from 5 kPa; at 8 kPa and more they pass out and die unless brought into clean air)\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects from it";
+			}
+
+			public static class HYPOXIA
+			{
+				public static LocString NAME = "Lightheaded";
+				public static LocString TOOLTIP = "Only {O2} kPa of <link=\"OXYGEN\">Oxygen</link> reaches this Duplicant's lungs (15 kPa and more is normal; the pressure around is {P} kPa): slower, worse at work, stressed\n\nBelow 8 kPa they start gasping for air and pass out within minutes";
+			}
+
+			public static class CO2HEADACHE
+			{
+				public static LocString NAME = "CO<sub>2</sub> Headache";
+				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: a headache, worse at work, stressed (from 3 kPa; poisoning from 5 kPa, passing out from 8 kPa)";
+			}
+
+			public static class OXYGENTOXICITY
+			{
+				public static LocString NAME = "Oxygen Toxicity";
+				public static LocString TOOLTIP = "This Duplicant has been breathing <link=\"OXYGEN\">Oxygen</link> at a very high pressure for too long ({O2} kPa in the lungs now; from 203 kPa for half a cycle): slower and stressed; from 304 kPa seizures\n\nIt fades after half a cycle at a normal pressure";
+			}
+
+			public static class STUFFYAIR
+			{
+				public static LocString NAME = "Stuffy Air";
+				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: drowsy and a little stressed (from 1 kPa; a headache from 3 kPa)";
+			}
+
+			public static class DECOMPRESSION
+			{
+				public static LocString NAME = "Decompression Injury";
+				public static LocString TOOLTIP = "The pressure around this Duplicant fell from {FROM} to {TO} kPa within seconds, {RATIO} times: {DAMAGE} damage and stress for half a cycle\n\nIt hurts when the pressure falls 4 times or more and below 25 kPa (5 damage at 4 times, 10 at 8, up to 20); a smaller drop only pops the ears\n\nA sealed suit like the <link=\"ATMOSUIT\">Atmo Suit</link> prevents this, and so does letting the pressure even out slowly";
+			}
+
+			public static class POPPEDEARS
+			{
+				public static LocString NAME = "Popped Ears";
+				public static LocString TOOLTIP = "The pressure around this Duplicant fell from {FROM} to {TO} kPa within seconds, {RATIO} times: painful ears and a little stress, no harm\n\nA drop of 4 times or more down below 25 kPa would injure them";
 			}
 		}
 

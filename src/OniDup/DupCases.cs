@@ -18,23 +18,24 @@ namespace OniDup
 	///
 	/// Scenes: normal air; Carbon Dioxide at 2, 4, 6.5 and 14 kPa (stuffy air, a headache, poisoning, passing out and death
 	/// from Carbon Dioxide); thin air at the four steps of the Oxygen scale; a vacuum (exposure, passing out, damage, death from
-	/// it); Oxygen at 3.3 atm (toxicity after half a cycle, seizures); a sharp drop of pressure (decompression injury);
+	/// it); Oxygen at 3.3 atm (toxicity after half a cycle, seizures); a sharp drop of pressure (decompression injury, about 6 damage);
 	/// buried to the waist and over the head (stays in place, breathing with the option off and on, freed when dug out); a dig
 	/// two cells away with a wall that goes up on the way or as the work starts (no work through the wall); an oxygen mask in
 	/// air poor in oxygen, in Carbon Dioxide and in a vacuum (helps in the first two only); Atmo, Jet and Lead suits taken
 	/// into a vacuum (nothing happens); the head under water (left to the game); a building's air supply (like a telescope's)
-	/// in a vacuum (nothing happens); a bionic Duplicant in Carbon Dioxide (not affected yet). Scenes whose equipment or
+	/// in a vacuum (nothing happens); a bionic Duplicant in Carbon Dioxide (not affected yet); a dig beside oneself in a narrow
+	/// tunnel (no injury) and into a vacuum pocket (an injury). Scenes whose equipment or
 	/// Duplicant model the game lacks (a DLC is off) are skipped.
 	/// </summary>
 	internal static class DupCases
 	{
-		private const int Rooms = 28, RoomsPerRow = 6, RoomWidth = 5, RoomHeight = 3;
+		private const int Rooms = 30, RoomsPerRow = 6, RoomWidth = 5, RoomHeight = 3;
 		private const int SiteWidth = 1 + RoomsPerRow * (RoomWidth + 1), SiteHeight = 1 + (Rooms + RoomsPerRow - 1) / RoomsPerRow * (RoomHeight + 1);
 		private const float Warm = 300f, AirMass = 1.8f, StartAfter = 8f;
 		private const int Normal = 0, Stuffy = 1, Headache = 2, Poisoning = 3, PassingOut = 4, Thin = 5, Lightheaded = 6, Gasping = 7, NoOxygen = 8,
 			Vacuum = 9, Toxic = 10, Drop = 11, Waist = 12, Head = 13, DigOnTheWay = 14, DigAtWork = 15,
 			MaskPoorAir = 16, MaskCarbon = 17, MaskVacuum = 18, AtmoSuit = 19, JetSuit = 20, LeadSuit = 21, UnderWater = 22, AirSupply = 23, Bionic = 24,
-			Pill = 25, PillWithHat = 26, PillColonist = 27;
+			Pill = 25, PillWithHat = 26, PillColonist = 27, TunnelDig = 28, VacuumBreach = 29;
 		private static readonly string[] Names =
 		{
 			"normal air", "stuffy air (CO2 2 kPa)", "a CO2 headache (4 kPa)", "CO2 poisoning (6.5 kPa)", "passing out and death from CO2 (14 kPa)",
@@ -44,6 +45,7 @@ namespace OniDup
 			"an oxygen mask in air poor in oxygen", "an oxygen mask in carbon dioxide", "an oxygen mask in a vacuum", "an atmo suit into a vacuum",
 			"a jet suit into a vacuum", "a lead suit into a vacuum", "the head under water", "a building's air supply in a vacuum",
 			"a bionic duplicant in carbon dioxide", "taking a pill", "taking a pill in a hat", "taking a pill, a Duplicant of the colony",
+			"a dig in a narrow tunnel (no injury)", "a dig into a vacuum pocket (an injury)",
 		};
 		// Equipment of the scenes, by room.
 		private static readonly Dictionary<int, string> Outfits = new Dictionary<int, string>
@@ -271,6 +273,18 @@ namespace OniDup
 			{
 				Set(RoomCell(room, 0, 0), SimHashes.IgneousRock, 1000f);
 			}
+			// A narrow tunnel: air only where the Duplicant stands (the right column, two cells), rock to dig beside them. A
+			// vacuum pocket: the same, with a vacuum behind the rock beside their feet.
+			foreach (int room in new[] { TunnelDig, VacuumBreach })
+			{
+				int r = room;
+				ForRoom(room, (cell, dx, dy) =>
+				{
+					if (dx == 4 && dy < 2) return;
+					if (r == VacuumBreach && dx < 3) Set(cell, SimHashes.Vacuum, 0f);
+					else Set(cell, SimHashes.IgneousRock, 1000f);
+				});
+			}
 		}
 
 		/// <summary>Carbon Dioxide is added the way buildings add gas: with the gas mixture mod it joins the Oxygen of the cell.</summary>
@@ -320,7 +334,7 @@ namespace OniDup
 					Skip(room, "not in this game (a DLC is off)");
 					continue;
 				}
-				int cell = RoomCell(room, room == DigOnTheWay || room == DigAtWork ? 4 : 3, 0);
+				int cell = RoomCell(room, room == DigOnTheWay || room == DigAtWork || room == TunnelDig || room == VacuumBreach ? 4 : 3, 0);
 				// Traits that would spoil a scene: no digging, falling asleep at random, breathing much more or less, bigger lungs.
 				MinionStartingStats stats;
 				do
@@ -344,6 +358,9 @@ namespace OniDup
 				wallTime[room] = -1f;
 				throughWall[room] = -1f;
 			}
+			DigTool.PlaceDig(RoomCell(TunnelDig, 3, 0));
+			DigTool.PlaceDig(RoomCell(TunnelDig, 3, 1));
+			DigTool.PlaceDig(RoomCell(VacuumBreach, 3, 0));
 			Debug.Log($"{ModContext.Tag} DupCases: {Rooms} Duplicants placed; air: {DupAir.Sources}; " +
 				$"Oxygen {DupAir.Partial(ElementLoader.FindElementByHash(SimHashes.Oxygen), 1f, Warm):F1} kPa per kg");
 		}
@@ -415,14 +432,16 @@ namespace OniDup
 					if (t >= 4f)
 					{
 						string[] effects = { null, DupAir.StuffyId, DupAir.HeadacheId, DupAir.PoisoningId };
-						Expect(room, air.Zone == AirZone.Normal && air.CarbonDioxideLevel == room && OnlyEffect(dupe, effects[room]), dupe);
+						StatusItem[] statuses = { null, DupAir.StuffyStatus, DupAir.HeadacheStatus, DupAir.PoisoningStatus };
+						Expect(room, air.Zone == AirZone.Normal && air.CarbonDioxideLevel == room && OnlyEffect(dupe, effects[room]) && OnlyStatus(dupe, statuses[room]), dupe,
+							AirStatusText(dupe));
 					}
 					break;
 				case PassingOut:
 					if (t >= 4f && !notes.ContainsKey("co2-start"))
 					{
 						notes["co2-start"] = 1f;
-						if (!(air.CarbonDioxideLevel == 4 && air.Blocked && air.DrainName == (string)ONIDUP.BREATH.CARBONDIOXIDE))
+						if (!(air.CarbonDioxideLevel == 4 && air.Blocked && air.DrainName == (string)ONIDUP.BREATH.CARBONDIOXIDE && OnlyStatus(dupe, DupAir.CarbonDioxideOutStatus)))
 						{
 							Fail(room, "not passing out: " + Describe(dupe));
 						}
@@ -450,11 +469,13 @@ namespace OniDup
 					{
 						AirZone[] zones = { AirZone.Thin, AirZone.Hypoxia, AirZone.Severe, AirZone.NoOxygen };
 						string[] effects = { null, DupAir.HypoxiaId, DupAir.SevereHypoxiaId, null };
+						StatusItem[] statuses = { null, DupAir.HypoxiaStatus, DupAir.GaspingStatus, DupAir.NoOxygenStatus };
 						AirZone zone = zones[room - Thin];
 						bool blocked = zone == AirZone.Severe || zone == AirZone.NoOxygen;
 						bool lowOxygen = dupe.GetComponent<Effects>().HasEffect("LowOxygen");
 						Expect(room, air.Zone == zone && air.Blocked == blocked && OnlyEffect(dupe, effects[room - Thin]) && lowOxygen == (zone == AirZone.Thin) &&
-							Mathf.Abs(air.OxygenPressure - Lungs[room - Thin]) < 2.5f, dupe, $"game's Low Oxygen {lowOxygen}");
+							OnlyStatus(dupe, statuses[room - Thin]) && Mathf.Abs(air.OxygenPressure - Lungs[room - Thin]) < 2.5f, dupe,
+							$"game's Low Oxygen {lowOxygen}, {AirStatusText(dupe)}");
 					}
 					break;
 				case Vacuum:
@@ -473,6 +494,10 @@ namespace OniDup
 				case DigOnTheWay:
 				case DigAtWork:
 					DigScene(room, t, dupe);
+					break;
+				case TunnelDig:
+				case VacuumBreach:
+					BreachScene(room, t, dupe);
 					break;
 				case MaskPoorAir:
 					if (t >= 4f)
@@ -727,7 +752,43 @@ namespace OniDup
 			else if (t >= 8f)
 			{
 				float lost = notes["drop"] - health.hitPoints;
-				Expect(room, dupe.GetComponent<Effects>().HasEffect(DupAir.BarotraumaId) && lost >= 9f, dupe, $"health lost {lost:F1}");
+				// 101 -> 22.5 kPa, 4.5 times: about 6 damage.
+				Expect(room, dupe.GetComponent<Effects>().HasEffect(DupAir.BarotraumaId) && lost >= 4.5f && lost <= 8f, dupe, $"health lost {lost:F1}");
+			}
+		}
+
+		/// <summary>
+		/// Digging beside oneself: in a narrow tunnel of air no injury (the cells just dug are empty for a moment); into a vacuum
+		/// pocket the air runs out, about 6 times thinner: an injury.
+		/// </summary>
+		private static void BreachScene(int room, float t, GameObject dupe)
+		{
+			Health health = dupe.GetComponent<Health>();
+			if (!notes.ContainsKey("breach-health" + room))
+			{
+				notes["breach-health" + room] = health.hitPoints;
+			}
+			bool dug = room == TunnelDig ? !Grid.Solid[RoomCell(room, 3, 0)] && !Grid.Solid[RoomCell(room, 3, 1)] : !Grid.Solid[RoomCell(room, 3, 0)];
+			if (dug && !notes.ContainsKey("breach-dug" + room))
+			{
+				notes["breach-dug" + room] = t;
+				Debug.Log($"{ModContext.Tag} DupCases: {Names[room]}: dug at {t:F1} s");
+			}
+			if (!(notes.TryGetValue("breach-dug" + room, out float at) && t >= at + 8f) && t < 120f)
+			{
+				return;
+			}
+			Effects effects = dupe.GetComponent<Effects>();
+			float lost = notes["breach-health" + room] - health.hitPoints;
+			bool injured = effects.HasEffect(DupAir.BarotraumaId), ears = effects.HasEffect(DupAir.PoppedEarsId);
+			string what = $"dug {dug}, injury {injured}, popped ears {ears}, health lost {lost:F1}, {AirStatusText(dupe)}";
+			if (room == TunnelDig)
+			{
+				Expect(room, dug && !injured && lost < 0.5f, dupe, what);
+			}
+			else
+			{
+				Expect(room, dug && injured && lost >= 4.5f && lost <= 20f && dupe.GetComponent<KSelectable>().HasStatusItem(DupAir.DecompressionStatus), dupe, what);
 			}
 		}
 
@@ -829,7 +890,7 @@ namespace OniDup
 		private static readonly string[] OwnEffects =
 		{
 			DupAir.HypoxiaId, DupAir.SevereHypoxiaId, DupAir.EbullismId, DupAir.BarotraumaId, DupAir.StuffyId, DupAir.HeadacheId,
-			DupAir.PoisoningId, DupAir.ToxicityId, DupAir.SeizureId,
+			DupAir.PoisoningId, DupAir.ToxicityId, DupAir.SeizureId, DupAir.PoppedEarsId,
 		};
 
 		/// <summary>Of the mod's effects the Duplicant has exactly this one (or none).</summary>
@@ -837,6 +898,26 @@ namespace OniDup
 		{
 			Effects effects = dupe.GetComponent<Effects>();
 			return OwnEffects.All(own => effects.HasEffect(own) == (own == id));
+		}
+
+		private static StatusItem[] AirStatuses => new[] { DupAir.VacuumStatus, DupAir.CarbonDioxideOutStatus, DupAir.NoOxygenStatus, DupAir.BuriedStatus,
+			DupAir.GaspingStatus, DupAir.PoisoningStatus, DupAir.HypoxiaStatus, DupAir.HeadacheStatus, DupAir.ToxicityStatus, DupAir.StuffyStatus };
+
+		/// <summary>Of the air's status items only this one (or none) is shown, and its tooltip has all its numbers.</summary>
+		private static bool OnlyStatus(GameObject dupe, StatusItem item)
+		{
+			KSelectable selectable = dupe.GetComponent<KSelectable>();
+			DupAirMonitor air = dupe.GetComponent<DupAirMonitor>();
+			return AirStatuses.All(own => selectable.HasStatusItem(own) == (own == item))
+				&& (item == null || !air.Explain(item.tooltipText).Contains("{"));
+		}
+
+		private static string AirStatusText(GameObject dupe)
+		{
+			KSelectable selectable = dupe.GetComponent<KSelectable>();
+			DupAirMonitor air = dupe.GetComponent<DupAirMonitor>();
+			StatusItem shown = AirStatuses.FirstOrDefault(selectable.HasStatusItem);
+			return shown == null ? "status none" : $"status {shown.Name}: {air.Explain(shown.tooltipText).Replace("\n", " ")}";
 		}
 
 		private static Death DeathOf(GameObject dupe)
