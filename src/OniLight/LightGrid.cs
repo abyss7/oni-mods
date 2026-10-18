@@ -122,6 +122,7 @@ namespace OniLight
 			takenOut.Clear();
 			waiting.Clear();
 			toRefresh.Clear();
+			naturalOf.Clear();
 			wet.Clear();
 			wetQueue.Clear();
 			wetQuota = sweepQuota = 0f;
@@ -156,7 +157,7 @@ namespace OniLight
 			Unpin();
 		}
 
-		private static LightNative.SourceDesc Desc(LightGridManager.LightGridEmitter.State state)
+		private static LightNative.SourceDesc Desc(LightGridManager.LightGridEmitter.State state, bool natural = false)
 		{
 			Grid.CellToXY(state.origin, out int x, out int y);
 			return new LightNative.SourceDesc
@@ -169,8 +170,54 @@ namespace OniLight
 				shape = (int)state.shape,
 				direction = (int)state.direction,
 				width = state.width,
+				natural = natural ? 1 : 0,
 			};
 		}
+
+		// Whether a light is not made by the colony: the player sees its light only where a Duplicant sees (Darkness).
+		private static readonly Dictionary<LightGridManager.LightGridEmitter, bool> naturalOf = new Dictionary<LightGridManager.LightGridEmitter, bool>();
+
+		internal static bool IsNatural(LightGridManager.LightGridEmitter emitter)
+		{
+			if (naturalOf.TryGetValue(emitter, out bool natural))
+			{
+				return natural;
+			}
+			Light2D owner = null;
+			foreach (Light2D light in Components.Light2Ds.Items)
+			{
+				if (light != null && light.emitter == emitter)
+				{
+					owner = light;
+					break;
+				}
+			}
+			natural = !MadeByColony(owner);
+			if (owner != null)
+			{
+				naturalOf[emitter] = natural;
+			}
+			return natural;
+		}
+
+		/// <summary>A building the colony builds (from the build menu, a rocket module) or the printing pod.</summary>
+		private static bool MadeByColony(Light2D light)
+		{
+			if (light == null)
+			{
+				return false;
+			}
+			BuildingComplete building = light.GetComponent<BuildingComplete>();
+			if (building == null || building.Def == null)
+			{
+				return false; // creatures, plants, items
+			}
+			return building.Def.ShowInBuildMenu || light.GetComponent<Telepad>() != null || light.GetComponent<RocketModuleCluster>() != null;
+		}
+
+		internal static IEnumerable<int> ActiveIds => active;
+
+		internal static bool TryOwner(int id, out LightGridManager.LightGridEmitter emitter) => owners.TryGetValue(id, out emitter);
 
 		private static int IdFor(LightGridManager.LightGridEmitter emitter)
 		{
@@ -206,7 +253,7 @@ namespace OniLight
 				return false;
 			}
 			int id = IdFor(__instance);
-			LightNative.SourceDesc desc = Desc(state);
+			LightNative.SourceDesc desc = Desc(state, IsNatural(__instance));
 			LightNative.GridView view = View();
 			long start = System.Diagnostics.Stopwatch.GetTimestamp();
 			LightNative.Add(&view, id, &desc);
@@ -450,6 +497,7 @@ namespace OniLight
 					LightNative.Free(id);
 					wet.Remove(id);
 					owners.Remove(id);
+					naturalOf.Remove(emitter);
 					ids.Remove(emitter);
 					freeIds.Push(id);
 					Frees++;
@@ -471,7 +519,7 @@ namespace OniLight
 			{
 				return;
 			}
-			LightNative.SourceDesc desc = Desc(emitter.state);
+			LightNative.SourceDesc desc = Desc(emitter.state, IsNatural(emitter));
 			LightNative.GridView view = View();
 			long start = System.Diagnostics.Stopwatch.GetTimestamp();
 			LightNative.Remove(&view, id, 0);

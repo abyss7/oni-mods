@@ -107,6 +107,7 @@ namespace OniFixes
 			view.mass = Grid.mass;
 			view.properties = Grid.properties;
 			view.backwallElementIdx = BackwallManager.element_idx;
+			view.shown = p.simProperty == PropertyTextures.Property.FogOfWar ? NativeLib.BlackoutShown() : null;
 			if (ClusterManager.Instance != null)
 			{
 				view.activeWorld = ClusterManager.Instance.activeWorldId;

@@ -149,6 +149,18 @@ namespace OniLight
 						else if (frame == 91)
 						{
 							OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
+							// The colony: what the player sees where the Duplicants are.
+							Telepad pod = Components.Telepads.Items.Count > 0 ? Components.Telepads.Items[0] : null;
+							if (pod != null) CameraController.Instance.SnapTo(pod.transform.GetPosition(), 14f);
+						}
+						else if (frame == 150)
+						{
+							Picture("colony");
+							Telepad pod = Components.Telepads.Items.Count > 0 ? Components.Telepads.Items[0] : null;
+							if (pod != null && Mod.Options.Blackout) Blackout(pod);
+						}
+						else if (frame == 151)
+						{
 							LightGrid.Report("after the scenes");
 							Debug.Log($"{ModContext.Tag} LightCases: {passed} passed, {failed} failed; closing the game");
 							phase = 10;
@@ -500,6 +512,26 @@ namespace OniLight
 			}
 			Expect(name, cells > 0 && worst < 0.002f, $"{cells} cells, {mixed} of them mixed, {dimmed} dim light; largest difference of what a cell lets through {worst:F4}" +
 				(composition == null ? " (no mixture mod: by the main substance)" : ""));
+		}
+
+		/// <summary>The Blackout mode: a lamp nobody can walk into does not show, the printing pod's light does.</summary>
+		private static unsafe void Blackout(Telepad pod)
+		{
+			float* v = stackalloc float[3];
+			// A closed room of the scenes: no Duplicant can walk into it.
+			int room = Cell(RoomA + 13, Floor + 4);
+			LightNative.SeenCell(room, v);
+			Expect("a lamp no Duplicant can walk into does not show", Grid.LightCount[room] > 0 && v[0] <= 0f, $"light {Grid.LightCount[room]} lux, shown {v[0]:F0}");
+			int podCell = Grid.CellAbove(Grid.PosToCell(pod));
+			LightNative.SeenCell(podCell, v);
+			Expect("the printing pod's light shows", v[0] > 0f && !Darkness.Dark(podCell), $"light {Grid.LightCount[podCell]} lux, shown {v[0]:F0}, in sight {v[2] > 0f}, dark {Darkness.Dark(podCell)}");
+			Expect("the dark room is dark to the player", Darkness.Dark(room), $"dark {Darkness.Dark(room)}");
+			// A dig order in the dark room is refused (through the dig tool, as the player would drag it).
+			int wall = Cell(RoomA - 1, Floor + 4);
+			bool dark = Darkness.Dark(wall);
+			AccessTools.Method(typeof(DigTool), "OnDragTool").Invoke(DigTool.Instance, new object[] { wall, 0 });
+			Expect("no dig order in the dark", dark && Grid.Objects[wall, (int)ObjectLayer.DigPlacer] == null, $"the wall dark {dark}, an order there {Grid.Objects[wall, (int)ObjectLayer.DigPlacer] != null}");
+			Debug.Log($"{ModContext.Tag} LightCases: darkness: sight updates {Darkness.SightUpdates}, colony sources checked {Darkness.SeenChecks}, views {Darkness.Views}");
 		}
 
 		private static string Where(int cell)

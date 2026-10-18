@@ -19,7 +19,7 @@ namespace OniFixes
 	internal static unsafe class NativeLib
 	{
 		// Must match ONI_NATIVE_ABI in native/oni_grid.h.
-		private const int ExpectedAbi = 5;
+		private const int ExpectedAbi = 6;
 
 		/// <summary>Layout matches OniGridView in native/oni_grid.h.</summary>
 		[StructLayout(LayoutKind.Sequential)]
@@ -38,6 +38,16 @@ namespace OniFixes
 			public byte* buildMasks;
 			public float* damage;
 			public byte* elementState;
+			public byte* shown;
+		}
+
+		/// <summary>
+		/// What the player sees by cell (OniLight's Blackout mode: 0 darkness .. 255 the game's own picture), through the
+		/// application domain data "OniMods.BlackoutShown.1"; null without that mode.
+		/// </summary>
+		internal static byte* BlackoutShown()
+		{
+			return AppDomain.CurrentDomain.GetData("OniMods.BlackoutShown.1") is Func<IntPtr> shown ? (byte*)shown() : null;
 		}
 
 		/// <summary>Layout matches OniTextureTarget in native/oni_grid.h.</summary>

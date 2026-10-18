@@ -14,7 +14,7 @@ namespace OniLight
 	internal static unsafe class LightNative
 	{
 		// Must match ONI_LIGHT_ABI in native/oni_light.cpp.
-		private const int ExpectedAbi = 3;
+		private const int ExpectedAbi = 5;
 
 		/// <summary>Layout matches onilight::ElementOptics.</summary>
 		[StructLayout(LayoutKind.Sequential)]
@@ -51,6 +51,7 @@ namespace OniLight
 			public int x, y;
 			public float lux, range, falloff;
 			public int shape, direction, width;
+			public int natural;
 		}
 
 		[DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -70,6 +71,12 @@ namespace OniLight
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void CellFn(int cell, float* out3);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void CheckFn(GridView* grid, int x0, int y0, int x1, int y1, float* out6);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int WetFn(int id);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void SetSeenFn(int id, int seen);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int SourceCellsFn(int id, int* cells, int capacity);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void SightFn(GridView* grid, int* eyes, int count, float radius);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void UpdateShownFn(int x0, int y0, int x1, int y1, byte* exposed, float sunLux);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate byte* ShownFn();
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void SeenCellFn(int cell, float* out3);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void StatsFn(long* out7);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int ReachFn(float range);
 
@@ -86,6 +93,12 @@ namespace OniLight
 		internal static StatsFn Stats;
 		internal static ReachFn Reach;
 		internal static WetFn Wet;
+		internal static SetSeenFn SetSeen;
+		internal static SourceCellsFn SourceCells;
+		internal static SightFn Sight;
+		internal static UpdateShownFn UpdateShown;
+		internal static ShownFn Shown;
+		internal static SeenCellFn SeenCell;
 
 		internal static bool Load()
 		{
@@ -120,6 +133,12 @@ namespace OniLight
 				Stats = Bind<StatsFn>(module, "oni_light_stats");
 				Reach = Bind<ReachFn>(module, "oni_light_reach");
 				Wet = Bind<WetFn>(module, "oni_light_wet");
+				SetSeen = Bind<SetSeenFn>(module, "oni_light_set_seen");
+				SourceCells = Bind<SourceCellsFn>(module, "oni_light_source_cells");
+				Sight = Bind<SightFn>(module, "oni_light_sight");
+				UpdateShown = Bind<UpdateShownFn>(module, "oni_light_update_shown");
+				Shown = Bind<ShownFn>(module, "oni_light_shown");
+				SeenCell = Bind<SeenCellFn>(module, "oni_light_seen_cell");
 				Info = Marshal.PtrToStringAnsi(Bind<InfoFn>(module, "oni_light_info")()) + "; this processor: " +
 					Marshal.PtrToStringAnsi(Bind<InfoFn>(module, "oni_light_variant")());
 				Available = true;
