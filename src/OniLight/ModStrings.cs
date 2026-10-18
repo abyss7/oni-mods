@@ -20,7 +20,7 @@ namespace OniLight
 			public static class POOLGLOW
 			{
 				public static LocString NAME = "Glowing water at the start";
-				public static LocString TOOLTIP = "With Blackout: while the first Duplicants' New Hope lasts, a glow lies at the bottom of the clean water pool nearest the Printing Pod, as if someone had dropped a glow stick there, so you can find the water. It fades out with their glow sticks. Its light shows whether or not a Duplicant can reach it.";
+				public static LocString TOOLTIP = "With Blackout: at the start a glow lies at the bottom of the clean water pool nearest the Printing Pod, as if someone had dropped a glow stick there, so you can find the water. Its light shows whether or not a Duplicant can reach it. Once a Duplicant has seen it, it fades out within a minute; if nobody finds it, it fades with the first Duplicants' New Hope.";
 			}
 		}
 

@@ -156,6 +156,7 @@ namespace OniLight
 						break;
 					case 6 when now >= phaseTime + 3f:
 						SecondLook();
+						PoolCheck();
 						Next(now);
 						break;
 					case 7 when now >= phaseTime + 3f:
@@ -169,7 +170,23 @@ namespace OniLight
 						frame = 0;
 						break;
 					case 9:
-						if (++frame == 30)
+						if (++frame == 2 && glowDupes.Count > 3 && glowDupes[3] != null)
+						{
+							// Asleep (the tag the game's sleep gives): the stick is put away.
+							glowDupes[3].AddTag(GameTags.Asleep);
+						}
+						else if (frame == 6 && glowDupes.Count > 3 && glowDupes[3] != null)
+						{
+							asleepLux = DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(glowDupes[3])));
+							glowDupes[3].RemoveTag(GameTags.Asleep);
+						}
+						else if (frame == 10 && glowDupes.Count > 3 && glowDupes[3] != null)
+						{
+							int awake = DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(glowDupes[3])));
+							Expect("a glow stick is put away while its Duplicant sleeps", asleepLux < DarkWork.Dim && awake >= 300,
+								$"asleep {asleepLux} lux, awake again {awake} lux");
+						}
+						if (frame == 30)
 						{
 							Picture("normal");
 						}
@@ -609,7 +626,8 @@ namespace OniLight
 			{
 				stats = new MinionStartingStats(GameTags.Minions.Models.Standard, is_starter_minion: false);
 			}
-			while (stats.Traits.Exists(trait => trait.Id == "Narcolepsy"));
+			// Not falling asleep at random; not the game's glowing Duplicant (its own light would spoil the dark scenes).
+			while (stats.Traits.Exists(trait => trait.Id == "Narcolepsy" || trait.Id == "GlowStick"));
 			GameObject dupe = Util.KInstantiate(prefab);
 			dupe.name = prefab.name;
 			Immigration.Instance.ApplyDefaultPersonalPriorities(dupe);
@@ -621,6 +639,7 @@ namespace OniLight
 		}
 
 		private static readonly List<GameObject> glowDupes = new List<GameObject>();
+		private static int asleepLux = -1;
 		private static readonly List<(GlowStick stick, float left)> glowHope = new List<(GlowStick, float)>();
 
 		private static void Teleport(GameObject dupe, int cell)
@@ -646,7 +665,59 @@ namespace OniLight
 			Grid.CellToXY(cell, out int x, out int y);
 			int lux = DarkWork.Lux(cell), above = DarkWork.Lux(Grid.CellAbove(cell));
 			Expect("the glow in the water lights its pool and shows", Grid.Element[cell].id == SimHashes.Water && lux >= 100 && !Darkness.Dark(cell),
-				$"at {x},{y}: {lux} lux, a cell up {above}, dark to the player {Darkness.Dark(cell)}, charge {GlowStick.ChargeFor(GlowStick.HopeLeft()):F2}");
+				$"at {x},{y}: {lux} lux, a cell up {above}, dark to the player {Darkness.Dark(cell)}, charge {PoolGlow.Charge:F2}, found at {PoolGlow.FoundAt:F0}");
+			// A Duplicant of the scene is brought near it to find it (unless one of the colony has already).
+			finder = PoolGlow.FoundAt < 0f && glowDupes.Count > 4 ? glowDupes[4] : null;
+			int stand = finder != null ? StandNear(cell) : Grid.InvalidCell;
+			if (Grid.IsValidCell(stand))
+			{
+				finderHome = Grid.PosToCell(finder);
+				Teleport(finder, stand);
+				Grid.CellToXY(stand, out int sx, out int sy);
+				Debug.Log($"{ModContext.Tag} LightCases: {finder.GetProperName()} brought to {sx},{sy} to find the glow in the water");
+			}
+			else
+			{
+				finder = null;
+			}
+		}
+
+		private static GameObject finder;
+		private static int finderHome = Grid.InvalidCell;
+
+		/// <summary>
+		/// Where to put a Duplicant to find the glow: beside it on the bottom of the pool (the pool's walls would hide it from
+		/// a Duplicant outside), or in its cell.
+		/// </summary>
+		private static int StandNear(int cell)
+		{
+			foreach (int c in new[] { Grid.CellLeft(cell), Grid.CellRight(cell) })
+			{
+				if (Grid.IsValidCell(c) && Grid.Element[c].IsLiquid && Grid.IsValidCell(Grid.CellBelow(c)) && Grid.Solid[Grid.CellBelow(c)]) return c;
+			}
+			return cell;
+		}
+
+		/// <summary>A minute or more later: once a Duplicant has seen the glow it fades out (FoundFade) and is gone for good.</summary>
+		private static void PoolFoundCheck()
+		{
+			if (finder != null && Grid.IsValidCell(finderHome))
+			{
+				Teleport(finder, finderHome);
+			}
+			if (!Mod.Options.Blackout || !Mod.Options.PoolGlow)
+			{
+				return;
+			}
+			float found = PoolGlow.FoundAt, now = GameClock.Instance.GetTime();
+			if (found < 0f)
+			{
+				Debug.Log($"{ModContext.Tag} LightCases: the glow in the water fades once found: skipped (no Duplicant has seen it; gone {PoolGlow.Gone})");
+				return;
+			}
+			bool should = now - found >= PoolGlow.FoundFade;
+			Expect("the glow in the water fades once found", should ? PoolGlow.Gone && !Grid.IsValidCell(PoolGlow.Cell) : PoolGlow.Charge < 1f,
+				$"found {now - found:F0} s ago, charge {PoolGlow.Charge:F2}, gone {PoolGlow.Gone}");
 		}
 
 		/// <summary>What darkness does to a Duplicant: "In the Dark" after a minute awake in it; work speed by the light.</summary>
@@ -661,7 +732,7 @@ namespace OniLight
 			}
 			Expect("glow sticks light the dark", glowDupes.Count > 0 && glowDupes[0] != null && DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(glowDupes[0]))) >= 300,
 				string.Join("; ", glows));
-			PoolCheck();
+			PoolFoundCheck();
 			int pocket = Cell(RoomB + RoomWidth + 2, Floor);
 			Effects effects = darkDupe.GetComponent<Effects>();
 			bool asleep = darkDupe.HasTag(GameTags.Asleep);

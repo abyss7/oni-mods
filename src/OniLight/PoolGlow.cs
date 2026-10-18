@@ -7,29 +7,38 @@ using UnityEngine;
 namespace OniLight
 {
 	/// <summary>
-	/// The Blackout mode's help at the start (option): while the first Duplicants' New Hope lasts, a glow lies at the bottom of
-	/// the clean water pool nearest the printing pod, as if a glow stick had been dropped there. Like the Duplicants' sticks:
-	/// 600 lux to 4 cells, only the game's own picture of a light (the glow and rays, neon blue), fading with New Hope over its
-	/// last half cycle. Its light shows to the player whether or not a Duplicant can reach it (LightGrid: always seen).
+	/// The Blackout mode's help at the start (option): to find the water quickly. When the first Duplicants' New Hope
+	/// begins, a glow is put at the bottom of the clean water pool nearest the printing pod, as if a glow stick had been
+	/// dropped there, and it stays in that cell (whatever happens to the water). Like the Duplicants' sticks: 600 lux to 4
+	/// cells, only the game's own picture of a light (the glow and rays, neon blue). Its light shows to the player whether or
+	/// not a Duplicant can reach it (LightGrid: always seen). Once a Duplicant has seen it, it has done its job and fades out
+	/// over FoundFade seconds; if nobody finds it, it fades with New Hope over its last half cycle. Then it is gone for good.
 	///
-	/// Nothing is saved: the glow follows the New Hope of the living Duplicants, and the pool is looked for again on loading
-	/// and whenever the water at the glow is gone.
+	/// Its state (cell, when found, gone) is saved with the Duplicants' glow sticks (GlowStick), whose New Hope it follows.
 	/// </summary>
 	internal sealed class PoolGlow : MonoBehaviour
 	{
 		internal static readonly Color Colour = new Color(0.1f, 0.55f, 1f);
-		private const float Period = 0.5f, SearchPeriod = 10f, PoolMass = 1000f;
+		internal const float FoundFade = 60f;
+		private const float Period = 0.25f, SearchPeriod = 10f, PoolMass = 1000f;
 		private const int MaxPoolCells = 4000;
 
 		private static PoolGlow instance;
 		private static float lastUpdate = -1000f, lastSearch = -1000f;
-		private static int cell = Grid.InvalidCell;
 		private static Light2D light;
 		private static float shown = -1f;
 		internal static long Searches;
 
-		/// <summary>The cell of the glow (invalid: none now).</summary>
-		internal static int Cell => instance != null ? cell : Grid.InvalidCell;
+		/// <summary>The cell of the glow while it is there (invalid: none now).</summary>
+		internal static int Cell => instance != null ? State().cell : Grid.InvalidCell;
+
+		/// <summary>When a Duplicant first saw the glow, game time (-1: not yet).</summary>
+		internal static float FoundAt => State().found;
+
+		internal static bool Gone => State().gone;
+
+		/// <summary>How much light the glow gives now, 0..1.</summary>
+		internal static float Charge { get; private set; }
 
 		internal static void Apply(Harmony harmony)
 		{
@@ -40,31 +49,53 @@ namespace OniLight
 		private static void Shutdown()
 		{
 			Remove();
-			cell = Grid.InvalidCell;
 			lastUpdate = lastSearch = -1000f;
+			Charge = 0f;
+		}
+
+		/// <summary>The saved state, from the first living Duplicant with a glow stick that has one.</summary>
+		private static (int cell, float found, bool gone) State()
+		{
+			foreach (MinionIdentity minion in Components.LiveMinionIdentities.Items)
+			{
+				GlowStick stick = minion != null ? minion.GetComponent<GlowStick>() : null;
+				if (stick != null && (stick.poolGone || stick.poolCell >= 0)) return (stick.poolCell, stick.poolFound, stick.poolGone);
+			}
+			return (-1, -1f, false);
+		}
+
+		private static void Save(int cell, float found, bool gone)
+		{
+			foreach (MinionIdentity minion in Components.LiveMinionIdentities.Items)
+			{
+				GlowStick stick = minion != null ? minion.GetComponent<GlowStick>() : null;
+				if (stick == null) continue;
+				stick.poolCell = cell;
+				stick.poolFound = found;
+				stick.poolGone = gone;
+			}
 		}
 
 		private static void Frame()
 		{
-			if (!LightGrid.Ready || Time.unscaledTime < lastUpdate + Period)
+			if (!LightGrid.Ready || GameClock.Instance == null || Time.unscaledTime < lastUpdate + Period)
 			{
 				return;
 			}
 			lastUpdate = Time.unscaledTime;
 			try
 			{
-				float charge = GlowStick.ChargeFor(GlowStick.HopeLeft());
-				if (charge <= 0f)
+				(int cell, float found, bool gone) = State();
+				float hope = GlowStick.ChargeFor(GlowStick.HopeLeft());
+				if (gone || (hope <= 0f && cell < 0))
 				{
 					Remove();
+					Charge = 0f;
 					return;
 				}
-				if (instance != null && !IsWater(cell))
+				if (cell < 0)
 				{
-					Remove();
-				}
-				if (instance == null)
-				{
+					// Put once, when New Hope begins.
 					if (Time.unscaledTime < lastSearch + SearchPeriod)
 					{
 						return;
@@ -75,6 +106,33 @@ namespace OniLight
 					{
 						return;
 					}
+					Save(cell, -1f, false);
+				}
+				float now = GameClock.Instance.GetTime();
+				// Found: a Duplicant sees its cell (the sight of Blackout, through water too).
+				if (found < 0f && instance != null && InSight(cell))
+				{
+					found = now;
+					Save(cell, found, false);
+					Grid.CellToXY(cell, out int fx, out int fy);
+					Debug.Log($"{ModContext.Tag} pool glow: found at {fx},{fy}; fading out over {FoundFade:F0} s");
+				}
+				float charge = hope;
+				if (found >= 0f)
+				{
+					float t = 1f - (now - found) / FoundFade;
+					charge = Mathf.Min(charge, t <= 0f ? 0f : t >= 1f ? 1f : t * t * (3f - 2f * t));
+				}
+				Charge = charge;
+				if (charge <= 0f)
+				{
+					Remove();
+					Save(cell, found, true);
+					Debug.Log($"{ModContext.Tag} pool glow: out for good");
+					return;
+				}
+				if (instance == null)
+				{
 					Create(cell);
 				}
 				// The game's picture dims with it, the light follows in steps of 1%.
@@ -94,8 +152,18 @@ namespace OniLight
 			}
 		}
 
-		private static bool IsWater(int c) => Grid.IsValidCell(c) && Grid.Element[c].id == SimHashes.Water;
+		private static readonly float[] seenCell = new float[3];
 
+		private static unsafe bool InSight(int cell)
+		{
+			fixed (float* v = seenCell)
+			{
+				LightNative.SeenCell(cell, v);
+			}
+			return seenCell[2] > 0f;
+		}
+
+		private static bool IsWater(int c) => Grid.IsValidCell(c) && Grid.Element[c].id == SimHashes.Water;
 		private static void Create(int at)
 		{
 			var go = new GameObject("OniLightPoolGlow");

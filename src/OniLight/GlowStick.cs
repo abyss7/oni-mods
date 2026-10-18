@@ -13,7 +13,8 @@ namespace OniLight
 	/// while their "New Hope" lasts (the game gives it to the starting Duplicants only, for three cycles). It gives 600 lux
 	/// to 4 cells, fades out over the last half cycle of New Hope and is gone for good when it ends. The stick itself is
 	/// not drawn (as if hidden by the Duplicant's body): what shows is the game's own picture of a light, its coloured glow
-	/// and rays, dimming with the stick.
+	/// and rays, dimming with the stick. While the Duplicant sleeps the stick is put away (its light is off), so that it
+	/// does not wake them or those sleeping near them; New Hope runs on meanwhile.
 	/// </summary>
 	[SerializationConfig(MemberSerialization.OptIn)]
 	internal sealed class GlowStick : KMonoBehaviour
@@ -29,6 +30,12 @@ namespace OniLight
 
 		/// <summary>The stick has gone out (for good).</summary>
 		[Serialize] public bool gone;
+
+		// The glow in the water (PoolGlow) keeps its state with the Duplicants whose New Hope it follows: its cell (-1: not
+		// placed yet), when a Duplicant first saw it (game time, -1: not yet) and whether it is out for good.
+		[Serialize] public int poolCell = -1;
+		[Serialize] public float poolFound = -1f;
+		[Serialize] public bool poolGone;
 
 		/// <summary>For the self-check pictures: a colour of its own.</summary>
 		internal Color? colour;
@@ -125,6 +132,16 @@ namespace OniLight
 				Destroy(light);
 				light = null;
 				gone = true;
+				return;
+			}
+			// Put away while asleep: the game wakes a Duplicant whose cell has 500 lux or more.
+			bool asleep = gameObject.HasTag(GameTags.Asleep);
+			if (light.enabled == asleep)
+			{
+				light.enabled = !asleep;
+			}
+			if (asleep)
+			{
 				return;
 			}
 			// The game's picture of the light dims with it: its coloured glow and its rays.
