@@ -188,6 +188,11 @@ namespace OniProfiler
 					Report.NativeProbeOnce = true;
 					continue;
 				}
+				if (line.StartsWith("@memory"))
+				{
+					MemoryReport.Enabled = true;
+					continue;
+				}
 				if (line.StartsWith("@ui-callbacks"))
 				{
 					StagedCallbacks.Configure(45, onlyUi: true);
@@ -508,7 +513,7 @@ namespace OniProfiler
 		// The long frame list also gets stutters shorter than a "hitch": they are noticeable by eye too.
 		internal const float LongFrameMs = 80f;
 		internal static readonly List<string> LongFrames = new List<string>();
-		// The expensive report sections are switched on by the lines "@kanim-counters" and "@native-probe" in the method list.
+		// The expensive report sections are switched on by the lines "@kanim-counters", "@native-probe" and "@memory" in the method list.
 		// The animation counters walk all scene objects and cost about half a second: when they were on by default
 		// the profiler itself caused a hitch every 30 seconds.
 		internal static bool KAnimCounters, NativeProbeOnce;
@@ -587,6 +592,7 @@ namespace OniProfiler
 				{
 					NativeProbe.AppendOnce(sb);
 				}
+				MemoryReport.AppendOnce(sb);
 				// Cost of the report itself: it is written on the main thread, and the frame it happens in is longer than usual.
 				sb.AppendLine();
 				sb.AppendLine($"report built in {(Stopwatch.GetTimestamp() - reportStart) * 1000.0 / Stopwatch.Frequency:F1} ms (this frame is left out of the next window)");
