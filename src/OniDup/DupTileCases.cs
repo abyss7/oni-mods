@@ -12,20 +12,23 @@ namespace OniDup
 	/// Self-check of building tiles (DupBuild): the file verify_dup_tiles.txt in the mod folder. A few seconds after loading,
 	/// the mod builds two closed rooms of Abyssalite with air and new Duplicants: in the first a builder gets a row of tile
 	/// orders along the floor and sandstone to build them with; in the second a builder gets one tile order in the cell of
-	/// another Duplicant, who is held there for a while and then let go. Checks: no tile is finished by a builder standing
-	/// inside it, all the row gets built, nobody ends up inside a tile; the held tile is not finished while the other
-	/// Duplicant is in it and is finished once they are gone. Then the game is closed. The world is changed: for a copy of
-	/// the save.
+	/// another Duplicant, who is held there for a while and then let go, and two tile orders one cell above the floor (a gap
+	/// under them a Duplicant cannot stand in) while a third Duplicant is sent back and forth under them. Checks: no tile is
+	/// finished by a builder standing inside it, all the tiles get built, nobody ends up inside a tile or steps into a cell
+	/// with the head in a tile; the held tile is not finished while the other Duplicant is in it and is finished once they
+	/// are gone. Then the game is closed. The world is changed: for a copy of the save.
 	/// </summary>
 	internal static class DupTileCases
 	{
 		private const int SiteWidth = 32, SiteHeight = 7, Row = 9;
 		private const float StartAfter = 8f, Warm = 300f, HoldFor = 60f, AfterRelease = 240f;
 
-		private static int phase, originX, originY, passed, failed, insideFinished, finished;
+		private static int phase, originX, originY, passed, failed, insideFinished, finished, headInside, walks;
 		private static float phaseTime;
 		private static readonly HashSet<GameObject> orders = new HashSet<GameObject>();
-		private static GameObject builderA, builderB, occupant, released, heldOrder;
+		private static GameObject builderA, builderB, occupant, released, heldOrder, walker;
+		private static float lastWalk = -1000f;
+		private static bool walkRight;
 		private static int heldBefore;
 
 		internal static void Apply(Harmony harmony)
@@ -81,6 +84,7 @@ namespace OniDup
 				if (phase >= 3)
 				{
 					Trace();
+					Walk(now);
 				}
 				if (phase >= 3 && phase <= 4 && occupant != null)
 				{
@@ -122,6 +126,7 @@ namespace OniDup
 						builderA = Spawn(2, 1);
 						builderB = Spawn(18, 1);
 						occupant = Spawn(24, 1);
+						walker = Spawn(20, 1);
 						Sandstone(3, 1);
 						Sandstone(19, 1);
 						for (int x = 5; x < 5 + Row; x++)
@@ -142,6 +147,10 @@ namespace OniDup
 							released = occupant;
 							occupant = null;
 							released.GetComponent<Navigator>()?.Stop();
+							// Tiles one cell above the floor, with a gap under them: ordered only now, so that the builder tries
+							// the held tile first.
+							Order(26, 2);
+							Order(27, 2);
 							Next(now);
 						}
 						break;
@@ -151,7 +160,7 @@ namespace OniDup
 							Expect("the tiles get built", left == 0, $"{orders.Count - left} of {orders.Count} built, {left} left");
 							Expect("no tile is finished from inside it", insideFinished == 0 && finished > 0, $"{finished} finished, {insideFinished} from inside");
 							int buried = 0;
-							foreach (GameObject dupe in new[] { builderA, builderB, released })
+							foreach (GameObject dupe in new[] { builderA, builderB, released, walker })
 							{
 								if (dupe == null) continue;
 								int feet = Grid.PosToCell(dupe);
@@ -164,7 +173,8 @@ namespace OniDup
 								if (o != null && o.GetComponent<Constructable>() != null) Debug.Log($"{ModContext.Tag} DupTileCases: not built: {Where(Grid.PosToCell(o))}");
 							}
 							Expect("nobody ends up inside a tile", buried == 0, $"{buried} Duplicants inside a tile");
-							Debug.Log($"{ModContext.Tag} DupTileCases: DupBuild: work tables without the cells inside {DupBuild.filteredTables}, held ticks {DupBuild.heldTicks} ({DupBuild.stepping} for someone stepping in), made solid at once {DupBuild.earlySolid} cells");
+							Expect("nobody steps in with the head in a tile", headInside == 0, $"{headInside} times; walks under the gap {walks}");
+							Debug.Log($"{ModContext.Tag} DupTileCases: DupBuild: work tables without the cells inside {DupBuild.filteredTables}, held ticks {DupBuild.heldTicks} ({DupBuild.stepping} for someone stepping in), made solid at once {DupBuild.earlySolid} cells, finishing held {DupBuild.heldCompletions} frames");
 							Debug.Log($"{ModContext.Tag} DupTileCases: {passed} passed, {failed} failed; closing the game");
 							phase = 7;
 							App.Quit();
@@ -179,17 +189,38 @@ namespace OniDup
 			}
 		}
 
+		/// <summary>The third Duplicant is sent to one end of the room and back, under the tiles above the gap, every 6 s.</summary>
+		private static void Walk(float now)
+		{
+			if (walker == null || now < lastWalk + 6f)
+			{
+				return;
+			}
+			lastWalk = now;
+			walkRight = !walkRight;
+			int target = Cell(walkRight ? 30 : 20, 1);
+			ChoreProvider provider = walker.GetComponent<ChoreProvider>();
+			walker.GetComponent<ChoreDriver>()?.StopChore();
+			new MoveChore(provider, Db.Get().ChoreTypes.MoveTo, smi => target);
+			walks++;
+		}
+
 		private static readonly Dictionary<GameObject, int> lastCell = new Dictionary<GameObject, int>();
 
 		/// <summary>Each move of a scene Duplicant to another cell, with what the game thinks of that cell.</summary>
 		private static void Trace()
 		{
-			foreach (GameObject dupe in new[] { builderA, builderB, occupant ?? released })
+			foreach (GameObject dupe in new[] { builderA, builderB, occupant ?? released, walker })
 			{
 				if (dupe == null) continue;
 				int cell = Grid.PosToCell(dupe);
 				if (lastCell.TryGetValue(dupe, out int last) && last == cell) continue;
 				lastCell[dupe] = cell;
+				if (Grid.Solid[Grid.CellAbove(cell)] && Grid.Objects[Grid.CellAbove(cell), (int)ObjectLayer.FoundationTile] != null)
+				{
+					headInside++;
+					Debug.LogWarning($"{ModContext.Tag} DupTileCases: {dupe.GetProperName()} stepped to {Where(cell)} with the head in a tile");
+				}
 				Navigator navigator = dupe.GetComponent<Navigator>();
 				string nav = navigator == null ? "" : $" {navigator.CurrentNavType}{(navigator.IsMoving() ? " moving" : "")}";
 				Debug.Log($"{ModContext.Tag} DupTileCases: {dupe.GetProperName()} {Where(last)} -> {Where(cell)}: solid {Grid.Solid[cell]}, foundation {Grid.Foundation[cell]}, " +
@@ -208,7 +239,7 @@ namespace OniDup
 		private static string Others()
 		{
 			var parts = new List<string>();
-			foreach (GameObject dupe in new[] { builderA, builderB, occupant ?? released })
+			foreach (GameObject dupe in new[] { builderA, builderB, occupant ?? released, walker })
 			{
 				if (dupe == null) continue;
 				Navigator navigator = dupe.GetComponent<Navigator>();
