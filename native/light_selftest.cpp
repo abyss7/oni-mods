@@ -182,6 +182,39 @@ namespace
 		Expect(f.engine.Wet(0), "a light by a gas that dims light changes by itself (traced again by the mod)");
 	}
 
+	// What the player sees: a colony light only once marked as seen, a natural light only where a duplicant sees; the
+	// darkness of the view by the logarithm of the light; a wall blocks the sight.
+	void PlayerView()
+	{
+		Fixture f(Grid(61, 41, Oxygen));
+		for (int y = 0; y < 41; y++) f.grid.Set(30, y, Granite);
+		GridView g = f.View();
+		f.engine.Add(g, 0, Lamp(20, 20));          // the colony's
+		SourceDesc bug = Lamp(40, 20);
+		bug.natural = 1;                          // a light bug behind the wall
+		f.engine.Add(g, 1, bug);
+		const int lampCell = f.grid.Cell(22, 20), bugCell = f.grid.Cell(42, 20);
+		Expect(f.engine.SeenLux(lampCell) == 0.0f, "the player's view: a colony light not yet seen is dark");
+		f.engine.SetSeen(0, true);
+		Expect(Near(f.engine.SeenLux(lampCell), f.engine.Direct(lampCell), 1e-3), "the player's view: a seen colony light shows", f.engine.SeenLux(lampCell), f.engine.Direct(lampCell));
+		const int32_t eye = f.grid.Cell(20, 21);
+		f.engine.Sight(g, &eye, 1, 32.0f);
+		Expect(f.engine.InSight(f.grid.Cell(25, 21)) && !f.engine.InSight(bugCell), "the player's view: the sight stops at a wall");
+		const int32_t eye2 = f.grid.Cell(45, 21);
+		f.engine.Sight(g, &eye2, 1, 32.0f);
+		Expect(f.engine.InSight(bugCell) && f.engine.NaturalLux(bugCell) > 0.0f, "the player's view: a natural light shows where a duplicant sees");
+		std::vector<uint8_t> px(61 * 4);
+		f.engine.PlayerView(g, { 0, 20, 60, 20 }, nullptr, 0.0f, px.data(), 61);
+		const float lux = f.engine.SeenLux(lampCell), expected = 255.0f * (1.0f - std::min(1.0f, logf(1.0f + lux) / logf(1.0f + FullLux)));
+		Expect(px[22 * 4 + 3] == (uint8_t)(expected + 0.5f) && px[5 * 4 + 3] == 255, "the player's view: darkness by the logarithm of the light", px[22 * 4 + 3], expected);
+		f.engine.SetSeen(0, false);
+		f.engine.Remove(g, 0, false);
+		f.engine.Remove(g, 1, false);
+		double left = 0;
+		for (int c = 0; c < 61 * 41; c++) left = std::max(left, (double)fabsf(f.engine.SeenLux(c)) + fabsf(f.engine.NaturalLux(c)));
+		Expect(left < 1e-3, "the player's view: nothing left after removing", left, 0);
+	}
+
 	// A ceiling light lights the half below it; a beam is even on both sides of its axis.
 	void Shapes()
 	{
@@ -347,6 +380,7 @@ int main()
 	Walls();
 	LiquidAndGlass();
 	Gases();
+	PlayerView();
 	Shapes();
 	Reflection();
 	Variants();

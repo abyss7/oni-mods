@@ -9,7 +9,7 @@
 #include "oni_light.h"
 
 // Changes on any edit of the structures and signatures: C# compares the number and leaves the game's light alone on a mismatch.
-#define ONI_LIGHT_ABI 3
+#define ONI_LIGHT_ABI 4
 
 #define ONI_STRINGIFY2(x) #x
 #define ONI_STRINGIFY(x) ONI_STRINGIFY2(x)
@@ -104,6 +104,46 @@ ONI_EXPORT void oni_light_stats(int64_t* out)
 	out[4] = c.opticsCells;
 	out[5] = c.transportCells;
 	out[6] = c.writtenCells;
+}
+
+// ---------- What the player sees ----------
+
+// Whether a duplicant can walk into the light of a source made by the colony: the player sees its light only then.
+ONI_EXPORT void oni_light_set_seen(int32_t id, int32_t seen)
+{
+	engine.SetSeen(id, seen != 0);
+}
+
+// Cells a source lights directly, nearest first, at most capacity. Returns the number written.
+ONI_EXPORT int32_t oni_light_source_cells(int32_t id, int32_t* cells, int32_t capacity)
+{
+	return engine.SourceCells(id, cells, capacity);
+}
+
+// What duplicants see now, from their eye cells, up to radius cells.
+ONI_EXPORT void oni_light_sight(const onilight::GridView* grid, const int32_t* eyes, int32_t count, float radius)
+{
+	engine.Sight(*grid, eyes, count, radius);
+}
+
+// The player's view of cells x0..x1, y0..y1 as RGBA pixels of the layer drawn over the world (see Engine::PlayerView).
+ONI_EXPORT void oni_light_player_view(const onilight::GridView* grid, int32_t x0, int32_t y0, int32_t x1, int32_t y1, const uint8_t* exposed,
+	float sunLux, uint8_t* out, int32_t pageWidth)
+{
+	engine.PlayerView(*grid, { x0, y0, x1, y1 }, exposed, sunLux, out, pageWidth);
+}
+
+// out: light the player sees of the colony's sources, light of the others, whether duplicants see the cell.
+ONI_EXPORT void oni_light_seen_cell(int32_t cell, float* out)
+{
+	if (cell < 0 || cell >= engine.Width() * engine.Height())
+	{
+		out[0] = out[1] = out[2] = 0.0f;
+		return;
+	}
+	out[0] = engine.SeenLux(cell);
+	out[1] = engine.NaturalLux(cell);
+	out[2] = engine.InSight(cell) ? 1.0f : 0.0f;
 }
 
 // How far the light of a source can reach from its cell, in cells (what the game must watch for changes).

@@ -51,6 +51,8 @@ namespace onilight
 	constexpr float MinLux = 0.5f;            // less direct or reflected light than this is not kept
 	constexpr float MinScattered = 0.05f;     // less scattered light than this is not kept
 	constexpr float MaxRange = 64.0f;         // a larger radius (another mod's light) is taken as this
+	constexpr float FullLux = 500.0f;         // the player sees a cell at the game's own brightness from this light
+	constexpr float GlareFrom = 20000.0f, GlareFull = 100000.0f, GlareAlpha = 0.85f; // and it whitens from this to that
 
 	enum State : uint8_t { Vacuum = 0, Gas = 1, Liquid = 2, Solid = 3 };
 	enum Shape : int32_t { Circle = 0, Cone = 1, Quad = 2 };
@@ -92,6 +94,7 @@ namespace onilight
 		int32_t x, y;
 		float lux, range, falloff;
 		int32_t shape, direction, width;
+		int32_t natural; // not made by the colony (a creature, a plant, a natural rock): the player sees its light only where a duplicant sees
 	};
 
 	struct Rect
@@ -171,6 +174,7 @@ namespace onilight
 		float traced = 0.0f; // the brightness its light was traced with (the entries are for it)
 		float scale = 1.0f;  // the share of it in the grid (a light bug dimmed)
 		bool wet = false;    // there is liquid, a gas that dims light or a mixture in its area: its light changes as they move
+		bool seen = false;   // made by the colony and a duplicant can walk into its light: the player sees it
 		std::vector<Entry> direct, scattered;
 	};
 
@@ -255,6 +259,10 @@ namespace onilight
 			const size_t n = (size_t)width * height;
 			direct_.assign(n, 0.0f);
 			scattered_.assign(n, 0.0f);
+			seen_.assign(n, 0.0f);
+			natural_.assign(n, 0.0f);
+			sight_.assign(n, 0);
+			sightCells_.clear();
 			through_.assign(n, 1.0f);
 			albedo_.assign(n, 0.0f);
 			sources_.clear();
@@ -320,11 +328,114 @@ namespace onilight
 
 		bool Wet(int id) const { return id >= 0 && (size_t)id < sources_.size() && sources_[id].active && sources_[id].wet; }
 
+		// ---------- What the player sees ----------
+
+		// Whether a duplicant can walk into the light of a source made by the colony (the mod decides): the player sees its
+		// light only then.
+		void SetSeen(int id, bool seen)
+		{
+			if (id < 0 || (size_t)id >= sources_.size()) return;
+			Source& s = sources_[id];
+			if (s.seen == seen) return;
+			if (s.active && !s.desc.natural) Seen(s, seen_, (seen ? 1.0f : -1.0f) * s.scale);
+			s.seen = seen;
+		}
+
+		// Cells a source lights directly, nearest first, at most capacity (for the mod's check of who can walk into it).
+		int SourceCells(int id, int32_t* cells, int capacity) const
+		{
+			if (id < 0 || (size_t)id >= sources_.size() || !sources_[id].active) return 0;
+			const Source& s = sources_[id];
+			int n = 0;
+			for (size_t i = 0; i < s.direct.size() && n < capacity; i++) cells[n++] = (int32_t)s.direct[i].cell;
+			return n;
+		}
+
+		// What duplicants see now: from each eye cell, straight lines up to `radius` cells that pass open and transparent
+		// cells (gas, liquid, windows); the first solid cell on a line is seen too (its face). The light of things not made
+		// by the colony and of the sun shows to the player only in these cells.
+		void Sight(const GridView& g, const int32_t* eyes, int count, float radius)
+		{
+			for (int32_t c : sightCells_) sight_[c] = 0;
+			sightCells_.clear();
+			if (count <= 0 || w_ == 0) return;
+			const Tree& tree = TreeFor(radius / 1.5f);
+			const size_t n = tree.dx.size();
+			reach_.resize(n);
+			float* see = reach_.data();
+			for (int k = 0; k < count; k++)
+			{
+				const int eye = eyes[k];
+				if (eye < 0 || eye >= w_ * h_) continue;
+				const int ex = eye % w_, ey = eye / w_;
+				for (size_t i = 0; i < n; i++)
+				{
+					const int x = ex + tree.dx[i], y = ey + tree.dy[i];
+					const int p = tree.parent[i];
+					float open = 1.0f;
+					if (p >= 0)
+					{
+						if (see[p] <= 0.0f) { see[i] = 0.0f; continue; }
+						const int px = ex + tree.dx[p], py = ey + tree.dy[p];
+						open = p == 0 ? 1.0f : Clear(g, px, py);
+						if (tree.diagonal[i]) open *= std::max(Clear(g, x, py), Clear(g, px, y));
+					}
+					see[i] = open;
+					if (open <= 0.0f || x < 0 || y < 0 || x >= w_ || y >= h_) continue;
+					const int cell = y * w_ + x;
+					if (!sight_[cell])
+					{
+						sight_[cell] = 1;
+						sightCells_.push_back(cell);
+					}
+				}
+			}
+		}
+
+		// The player's view of a rectangle of cells, as pixels (RGBA, row by row, pageWidth pixels a row) of a layer drawn
+		// over the world: black with the darkness as alpha (0 lux: black; the brightness grows with the logarithm of the
+		// light up to full at FullLux), white with the glare as alpha from GlareFrom to GlareFull lux. The light seen: of the
+		// colony's sources a duplicant can walk into, and, in the cells duplicants see, of the others and of the sun
+		// (exposed 0..255 times sunLux).
+		void PlayerView(const GridView& g, Rect r, const uint8_t* exposed, float sunLux, uint8_t* out, int pageWidth) const
+		{
+			r = Clip(r);
+			const float logFull = logf(1.0f + FullLux);
+			for (int y = r.y0; y <= r.y1; y++)
+			{
+				uint8_t* px = out + (size_t)(y - r.y0) * pageWidth * 4;
+				const size_t row = (size_t)y * w_;
+				for (int x = r.x0; x <= r.x1; x++, px += 4)
+				{
+					const size_t c = row + x;
+					float lux = seen_[c];
+					if (sight_[c]) lux += natural_[c] + (exposed ? exposed[c] * (sunLux / 255.0f) : 0.0f);
+					if (lux >= GlareFrom)
+					{
+						const float t = std::min(1.0f, (lux - GlareFrom) / (GlareFull - GlareFrom));
+						px[0] = px[1] = px[2] = 255;
+						px[3] = (uint8_t)(GlareAlpha * 255.0f * t);
+					}
+					else
+					{
+						const float b = lux <= 0.0f ? 0.0f : std::min(1.0f, logf(1.0f + lux) / logFull);
+						px[0] = px[1] = px[2] = 0;
+						px[3] = (uint8_t)(255.0f * (1.0f - b) + 0.5f);
+					}
+				}
+			}
+		}
+
+		float SeenLux(int cell) const { return seen_[cell]; }
+		float NaturalLux(int cell) const { return natural_[cell]; }
+		bool InSight(int cell) const { return sight_[cell] != 0; }
+
 		void Free(int id)
 		{
 			if (id < 0 || (size_t)id >= sources_.size() || sources_[id].active) return;
 			Source& s = sources_[id];
 			s.kept = false;
+			s.seen = false;
 			std::vector<Entry>().swap(s.direct);
 			std::vector<Entry>().swap(s.scattered);
 		}
@@ -410,7 +521,19 @@ namespace onilight
 	private:
 		int w_ = 0, h_ = 0;
 		std::vector<ElementOptics> elements_;
-		std::vector<float> direct_, scattered_, through_, albedo_;
+		std::vector<float> direct_, scattered_, through_, albedo_, seen_, natural_;
+		std::vector<uint8_t> sight_;
+		std::vector<int32_t> sightCells_;
+
+		// Whether a duplicant sees through a cell (anything but an opaque solid), from the grid as it is now.
+		float Clear(const GridView& g, int x, int y) const
+		{
+			if (x < 0 || y < 0 || x >= w_ || y >= h_) return 0.0f;
+			const size_t c = (size_t)y * w_ + x;
+			const ElementOptics& e = Element(g.elementIdx[c]);
+			const bool solid = e.state == Solid || (g.buildMasks[c] & 1) != 0;
+			return !solid || (g.properties[c] & 0x10) != 0 ? 1.0f : 0.0f;
+		}
 		std::vector<Source> sources_;
 		std::vector<Tree> trees_;
 		std::vector<float> reach_, work_;
@@ -440,6 +563,15 @@ namespace onilight
 				g.lightCount[e.cell] = Round(direct_[e.cell] + scattered_[e.cell]);
 			}
 			counters_.writtenCells += (int64_t)(s.direct.size() + s.scattered.size());
+			// What the player may see of it.
+			if (s.desc.natural) Seen(s, natural_, sign);
+			else if (s.seen) Seen(s, seen_, sign);
+		}
+
+		static void Seen(const Source& s, std::vector<float>& grid, float amount)
+		{
+			for (const Entry& e : s.direct) grid[e.cell] += amount * e.value;
+			for (const Entry& e : s.scattered) grid[e.cell] += amount * e.value;
 		}
 
 		// Trees by radius, rounded to a quarter of a cell (a light bug's radius shrinks smoothly as it dims); kept for the
