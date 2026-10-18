@@ -224,6 +224,23 @@ namespace
 		Expect(left < 1e-3, "the player's view: nothing left after removing", left, 0);
 	}
 
+	// A ceiling light in a room 12 x 4 of Granite: the ceiling and the tops of the walls, out of its direct light, get the
+	// light scattered from the floor.
+	void CeilingRoom()
+	{
+		Grid room(16, 10, Granite);
+		for (int y = 2; y <= 5; y++)
+			for (int x = 2; x <= 13; x++) room.Set(x, y, Oxygen);
+		Fixture f(room);
+		GridView g = f.View();
+		f.engine.Add(g, 0, Lamp(7, 5, 1800, 8, Cone));
+		const int ceiling = f.grid.Cell(4, 6), wallTop = f.grid.Cell(1, 5), corner = f.grid.Cell(13, 6);
+		Expect(f.engine.Direct(ceiling) == 0.0f && f.engine.Direct(wallTop) == 0.0f, "a ceiling light: no direct light on the ceiling and the tops of the walls");
+		Expect(f.engine.Scattered(ceiling) >= 1.0f && f.engine.Scattered(wallTop) >= 1.0f && f.engine.Scattered(corner) >= 1.0f,
+			"a ceiling light: the ceiling and the walls lit from the floor", f.engine.Scattered(ceiling), f.engine.Scattered(wallTop));
+		Expect(f.engine.Scattered(f.grid.Cell(4, 8)) == 0.0f && f.engine.Scattered(f.grid.Cell(0, 3)) == 0.0f, "a ceiling light: nothing inside the rock behind the faces");
+	}
+
 	// A ceiling light lights the half below it; a beam is even on both sides of its axis.
 	void Shapes()
 	{
@@ -391,6 +408,7 @@ int main()
 	Gases();
 	PlayerView();
 	Shapes();
+	CeilingRoom();
 	Reflection();
 	Variants();
 	Rescale();

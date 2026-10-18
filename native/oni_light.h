@@ -831,10 +831,21 @@ namespace onilight
 			for (int ly = 1; ly < lh - 1; ly++)
 			{
 				const uint32_t row = (uint32_t)((region.y0 + ly - 1) * w_ + region.x0 - 1);
-				const float* a = A + (size_t)ly * lw;
+				const size_t i0 = (size_t)ly * lw;
+				const float* a = A + i0;
+				const float* t = T + i0;
 				for (int lx = 1; lx < lw - 1; lx++)
 				{
-					const float v = a[lx] * norm;
+					// A solid face is lit by the scattered light in front of it (the mean of its open sides: linear, so the
+					// lights add up): the ceiling over a light that shines down, the walls by the floor. Solid cells carry no
+					// light of their own.
+					float v;
+					if (t[lx] > 0.0f) v = a[lx] * norm;
+					else
+					{
+						const int open = (t[lx - 1] > 0.0f) + (t[lx + 1] > 0.0f) + (t[lx - lw] > 0.0f) + (t[lx + lw] > 0.0f);
+						v = open == 0 ? 0.0f : (a[lx - 1] + a[lx + 1] + a[lx - lw] + a[lx + lw]) * norm / (float)open;
+					}
 					if (v >= MinScattered) out.push_back({ row + (uint32_t)lx, v });
 				}
 			}
