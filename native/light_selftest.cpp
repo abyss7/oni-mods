@@ -12,7 +12,7 @@ using namespace onilight;
 
 namespace
 {
-	enum Element : uint16_t { Oxygen, Water, Granite, Katairite, Snow, Glass, Count };
+	enum Element : uint16_t { Oxygen, Water, Granite, Katairite, Snow, Glass, Chlorine, Count };
 
 	struct Grid
 	{
@@ -21,6 +21,7 @@ namespace
 		std::vector<float> mass;
 		std::vector<uint8_t> properties, buildMasks;
 		std::vector<int32_t> light;
+		std::vector<float> temperature, mix;
 
 		Grid(int width, int height, Element fill, uint16_t back = 0xFFFF) : w(width), h(height)
 		{
@@ -32,6 +33,8 @@ namespace
 			properties.assign(n, 0);
 			buildMasks.assign(n, 0);
 			light.assign(n, 0);
+			temperature.assign(n, 293.15f);
+			mix.assign(n, NAN);
 			for (int y = 0; y < h; y++)
 				for (int x = 0; x < w; x++) Set(x, y, fill, back);
 		}
@@ -45,7 +48,10 @@ namespace
 			buildMasks[c] = e == Granite || e == Katairite || e == Snow || e == Glass ? 1 : 0;
 		}
 		int Cell(int x, int y) const { return y * w + x; }
-		GridView View() { return { w, h, element.data(), mass.data(), properties.data(), backwall.data(), buildMasks.data(), built.data(), light.data() }; }
+		GridView View()
+		{
+			return { w, h, element.data(), mass.data(), properties.data(), backwall.data(), buildMasks.data(), built.data(), light.data(), temperature.data(), mix.data() };
+		}
 	};
 
 	std::vector<ElementOptics> Elements()
@@ -57,6 +63,9 @@ namespace
 		t[Katairite] = { 0.08f, 0.0f, Solid, {} };
 		t[Snow] = { 0.85f, 0.0f, Solid, {} };
 		t[Glass] = { 0.08f, 0.0f, Solid, {} };
+		// Chlorine: a fifth of the light per cubic metre at one atmosphere (2.95 kg at 293 K); shown as the equivalent mass
+		// of the reference gas (molar 70.906 over 31.998).
+		t[Chlorine] = { 0.0f, -logf(0.8f) / 2.95f, Gas, {}, 70.906f / 31.998f };
 		return t;
 	}
 
@@ -147,6 +156,30 @@ namespace
 		o.engine.Add(go, 0, Lamp(20, 20, 1000, 8));
 		const double through = w.engine.Direct(w.grid.Cell(27, 20)) / o.engine.Direct(o.grid.Cell(27, 20));
 		Expect(Near(through, WindowThrough, 1e-4), "a window lets through 0.9", through, WindowThrough);
+	}
+
+	// A gas that dims light, by its real mass (the shown mass is the equivalent of the reference gas); a mixture by what
+	// the mod gives for the cell.
+	void Gases()
+	{
+		Fixture f(Grid(41, 41, Oxygen));
+		const float shown = 2.95f * 31.998f / 70.906f; // one atmosphere of chlorine at 293.15 K, as the gas mixture mod shows it
+		for (int y = 0; y < 41; y++)
+		{
+			f.grid.Set(25, y, Chlorine);
+			f.grid.mass[f.grid.Cell(25, y)] = shown;
+			f.grid.Set(26, y, Chlorine);
+			f.grid.mass[f.grid.Cell(26, y)] = shown;
+			f.grid.temperature[f.grid.Cell(26, y)] = 2.0f * 293.15f; // as hot, the same shown mass is half as much chlorine
+			f.grid.mix[f.grid.Cell(27, y)] = 0.5f;                  // a mixture cell: what the mod gave
+		}
+		GridView g = f.View();
+		f.engine.Add(g, 0, Lamp(20, 20, 1000, 8));
+		Expect(Near(f.engine.Through(f.grid.Cell(25, 20)), 0.8, 1e-4), "chlorine: a fifth of the light per cell at one atmosphere", f.engine.Through(f.grid.Cell(25, 20)), 0.8);
+		Expect(Near(f.engine.Through(f.grid.Cell(26, 20)), sqrt(0.8), 1e-4), "chlorine: hot, the same shown mass is less gas", f.engine.Through(f.grid.Cell(26, 20)), sqrt(0.8));
+		Expect(Near(f.engine.Through(f.grid.Cell(27, 20)), 0.5, 1e-6), "a mixture: what the mod gives for the cell", f.engine.Through(f.grid.Cell(27, 20)), 0.5);
+		Expect(Near(f.engine.Through(f.grid.Cell(24, 20)), 1.0, 1e-6), "oxygen: clear", f.engine.Through(f.grid.Cell(24, 20)), 1.0);
+		Expect(f.engine.Wet(0), "a light by a gas that dims light changes by itself (traced again by the mod)");
 	}
 
 	// A ceiling light lights the half below it; a beam is even on both sides of its axis.
@@ -313,6 +346,7 @@ int main()
 	OpenField();
 	Walls();
 	LiquidAndGlass();
+	Gases();
 	Shapes();
 	Reflection();
 	Variants();

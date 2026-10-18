@@ -153,6 +153,48 @@ namespace OniLiquidMix
 			return 0f;
 		}
 
+		internal const string CompositionKey = "OniMods.LiquidComposition.1", CellsKey = "OniMods.LiquidMixtureCells.1";
+
+		/// <summary>
+		/// For other mods, without a reference to this one (application domain data): "OniMods.LiquidComposition.1" fills the
+		/// cell's liquids and their masses (kg) and returns how many (a cell without a mixture gives its liquid);
+		/// "OniMods.LiquidMixtureCells.1" fills the cells holding a mixture as far as the array goes and returns how many there
+		/// are. Main thread.
+		/// </summary>
+		internal static void Publish()
+		{
+			AppDomain.CurrentDomain.SetData(CompositionKey, (Func<int, ushort[], float[], int>)Composition);
+			AppDomain.CurrentDomain.SetData(CellsKey, (Func<int[], int>)MixtureCells);
+		}
+
+		private static readonly float[] shareBuffer = new float[Slots];
+
+		private static int Composition(int cell, ushort[] elements, float[] masses)
+		{
+			if (!Grid.IsValidCell(cell) || !Grid.Element[cell].IsLiquid)
+			{
+				return 0;
+			}
+			int liquids = Liquids(cell, elements, masses.Length >= Slots ? masses : shareBuffer);
+			float total = Grid.Mass[cell];
+			float[] shares = masses.Length >= Slots ? masses : shareBuffer;
+			for (int i = 0; i < liquids && i < masses.Length; i++)
+			{
+				masses[i] = shares[i] * total;
+			}
+			return Math.Min(liquids, masses.Length);
+		}
+
+		private static int MixtureCells(int[] into)
+		{
+			Refresh();
+			for (int i = 0; i < count && i < into.Length; i++)
+			{
+				into[i] = buffer[Header + i * RecordInts];
+			}
+			return count;
+		}
+
 		/// <summary>Liquids of the cell with shares by mass (at most four); a cell without a mixture has one, its substance.</summary>
 		internal static int Liquids(int cell, ushort[] elements, float[] shares)
 		{

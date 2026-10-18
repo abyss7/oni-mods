@@ -9,7 +9,7 @@
 #include "oni_light.h"
 
 // Changes on any edit of the structures and signatures: C# compares the number and leaves the game's light alone on a mismatch.
-#define ONI_LIGHT_ABI 2
+#define ONI_LIGHT_ABI 3
 
 #define ONI_STRINGIFY2(x) #x
 #define ONI_STRINGIFY(x) ONI_STRINGIFY2(x)
@@ -55,7 +55,8 @@ ONI_EXPORT void oni_light_remove(const onilight::GridView* grid, int32_t id, int
 	engine.Remove(*grid, id, keep != 0);
 }
 
-// Whether there is liquid in a source's area (its light changes as the liquid moves, with no event from the game).
+// Whether there is liquid, a gas that dims light or a mixture in a source's area (its light changes as they move, with no
+// event from the game).
 ONI_EXPORT int32_t oni_light_wet(int32_t id)
 {
 	return engine.Wet(id) ? 1 : 0;

@@ -12,10 +12,12 @@ namespace OniLight
 	/// after loading, the mod finds room (in rock if it can; failing that in the open; failing that over loose items, wires
 	/// and pipes) in the active world and builds three equal rooms, each with a
 	/// ceiling light, a floor lamp and a pool of water: sandstone with a sandstone back wall, abyssalite with an abyssalite
-	/// back wall, granite with a granite back wall (later covered with sandstone drywall); a corridor from the first room
+	/// back wall (its pool water and polluted water in columns, to mix), granite with a granite back wall (later covered
+	/// with sandstone drywall); a closed room of chlorine and oxygen in turn under a ceiling light; a corridor from the first room
 	/// round a corner; a window and a plain wall from the second into closed pockets; a closed cell with a shine bug. The
 	/// lamps are switched on without power. Then it checks, writing "LightCases: name: ok" or "FAILED" with numbers to the log:
-	/// light in the rooms, the pale room lighter than the dark one, water dimming light by depth, light round the corner,
+	/// light in the rooms, the pale room lighter than the dark one, water dimming light by depth, what mixed liquid and gas
+	/// cells let through against their composition, chlorine dimming a lamp, light round the corner,
 	/// light through the window and none through the wall, a shelf casting a shadow, drywall making a room lighter, a lamp
 	/// switched off and on, a lamp removed, and that the light grid equals a full computation. Then it takes two pictures
 	/// (normal view and the light overlay) and closes the game. The world is changed: the check is meant for a test run on a
@@ -28,7 +30,7 @@ namespace OniLight
 		// Rooms: interior 20 x 8 cells from (x, floor); walls 2 thick. A and B side by side below, C above A, the shine bug's
 		// cell above B.
 		private const int RoomA = 3, RoomB = 29, RoomC = 3, RoomWidth = 20, RoomHeight = 8, Floor = 2, FloorC = 14;
-		private const int Bug = 29;
+		private const int Bug = 29, Gas = 34, GasWidth = 10;
 
 		private static int phase, originX, originY, frame;
 		private static float phaseTime;
@@ -98,6 +100,13 @@ namespace OniLight
 						break;
 					case 2 when now >= phaseTime + 1f:
 						Carve();
+						for (int y = -2; y < SiteHeight + 2; y++)
+						{
+							for (int x = -2; x < SiteWidth + 2; x++)
+							{
+								if (Grid.IsValidCell(Cell(x, y))) Grid.Reveal(Cell(x, y), byte.MaxValue, forceReveal: true);
+							}
+						}
 						Next(now);
 						break;
 					case 3 when now >= phaseTime + 1f:
@@ -207,7 +216,7 @@ namespace OniLight
 			return true;
 		}
 
-		private static void Room(int x0, int floor, SimHashes walls, SimHashes back)
+		private static void Room(int x0, int floor, SimHashes walls, SimHashes back, bool mixedPool = false)
 		{
 			for (int y = floor - 2; y < floor + RoomHeight + 2; y++)
 			{
@@ -218,7 +227,9 @@ namespace OniLight
 					{
 						// A pool of water, 3 cells deep, under the ceiling light.
 						bool pool = x >= x0 + 10 && x < x0 + 18 && y < floor + 3;
-						Set(x, y, pool ? SimHashes.Water : SimHashes.Oxygen, pool ? 1000f : 1.8f);
+						// A mixed pool: columns of water and polluted water, which the liquid mixture mod mixes.
+						SimHashes liquid = mixedPool && (x - x0) % 2 == 1 ? SimHashes.DirtyWater : SimHashes.Water;
+						Set(x, y, pool ? liquid : SimHashes.Oxygen, pool ? 1000f : 1.8f);
 						Back(x, y, back);
 					}
 					else
@@ -232,7 +243,7 @@ namespace OniLight
 		private static void Carve()
 		{
 			Room(RoomA, Floor, SimHashes.SandStone, SimHashes.SandStone);
-			Room(RoomB, Floor, SimHashes.Katairite, SimHashes.Katairite);
+			Room(RoomB, Floor, SimHashes.Katairite, SimHashes.Katairite, mixedPool: true);
 			Room(RoomC, FloorC, SimHashes.Granite, SimHashes.Granite);
 			// From room A through its right wall at the floor, then up a shaft beside it.
 			for (int x = RoomA + RoomWidth; x < RoomA + RoomWidth + 4; x++)
@@ -263,6 +274,16 @@ namespace OniLight
 			}
 			Set(RoomB + RoomWidth, Floor + 4, SimHashes.Oxygen, 1.8f);
 			Set(RoomB + RoomWidth + 1, Floor + 4, SimHashes.Oxygen, 1.8f);
+			// A closed room of chlorine and oxygen in turn (the gas mixture mod mixes them), with a ceiling light.
+			for (int x = Gas; x < Gas + GasWidth; x++)
+			{
+				for (int y = FloorC; y < FloorC + 4; y++)
+				{
+					bool chlorine = (x + y) % 2 == 0;
+					Set(x, y, chlorine ? SimHashes.ChlorineGas : SimHashes.Oxygen, chlorine ? 3f : 1.8f);
+					Back(x, y, SimHashes.Granite);
+				}
+			}
 			// A closed cell for the shine bug.
 			for (int x = Bug - 1; x <= Bug + 1; x++)
 			{
@@ -291,6 +312,7 @@ namespace OniLight
 				if (x0 == RoomA && y0 == Floor) floorLampA = floor;
 				if (x0 == RoomB) floorLampB = floor;
 			}
+			lamps.Add(Build(CeilingLightConfig.ID, Gas + 1, FloorC + 3, SimHashes.Copper));
 			Build(GlassTileConfig.ID, RoomB + RoomWidth, Floor + 4, SimHashes.Glass);
 			Build(GlassTileConfig.ID, RoomB + RoomWidth + 1, Floor + 4, SimHashes.Glass);
 			GameObject bug = Util.KInstantiate(Assets.GetPrefab("LightBug"), Grid.CellToPosCBC(Cell(Bug, FloorC + 1), Grid.SceneLayer.Creatures));
@@ -418,12 +440,73 @@ namespace OniLight
 				}
 			}
 			Debug.Log($"{ModContext.Tag} LightCases: the shine bug's cell: brightest {bugLight} lux (it glows when it wants to)");
-			float* check = stackalloc float[4];
+			// Mixtures and gases that dim light: what each cell lets through by its composition, with every light traced again
+			// from the composition as it is now.
+			Mixtures.Update(force: true);
+			LightGrid.RetraceAll();
+			Compare("a mixed pool by its composition", RoomB + 10, Floor, 8, 3, liquid: true);
+			Compare("chlorine and oxygen by their composition", Gas, FloorC, GasWidth, 4, liquid: false);
+			// Straight down from the ceiling light of the chlorine room: 1800 / 1.5 three cells down, times what the two cells
+			// between let through.
+			float* cellNow = stackalloc float[3];
+			LightNative.Cell(Cell(Gas + 1, FloorC + 2), cellNow);
+			float t2 = cellNow[2];
+			LightNative.Cell(Cell(Gas + 1, FloorC + 1), cellNow);
+			float t1 = cellNow[2];
+			LightNative.Cell(Cell(Gas + 1, FloorC), cellNow);
+			float expectedDirect = 1800f / 1.5f * t2 * t1;
+			Expect("chlorine dims a lamp", Mathf.Abs(cellNow[0] - expectedDirect) <= expectedDirect * 0.01f + 1f && cellNow[0] < 1200f * 0.97f,
+				$"three cells down {cellNow[0]:F0} lux, 1200 in clear gas, {expectedDirect:F0} expected through {t2:F3} and {t1:F3}");
+			// As the lights stand (liquid may have moved since some were traced), then with every light traced again: the
+			// updates must give what a full computation gives.
+			float* check = stackalloc float[6];
 			LightNative.GridView view = LightGrid.View();
 			LightNative.Check(&view, originX, originY, originX + SiteWidth - 1, originY + SiteHeight - 1, check);
-			Expect("the light grid as a full computation", check[0] < 0.1f && check[1] <= 1f, $"largest difference: direct {check[0]:F3}, light grid {check[1]:F0} lux, " +
-				$"vs all reflected light at once {check[2]:F0} lux, over {check[3]:F0} cells");
+			Debug.Log($"{ModContext.Tag} LightCases: as the lights stand: largest difference direct {check[0]:F3} at {Where((int)check[4])}, light grid {check[1]:F0} lux at {Where((int)check[5])}");
+			LightGrid.RetraceAll();
+			view = LightGrid.View();
+			LightNative.Check(&view, originX, originY, originX + SiteWidth - 1, originY + SiteHeight - 1, check);
+			Expect("the light grid as a full computation", check[0] < 0.1f && check[1] <= 1f, $"every light traced again; largest difference: direct {check[0]:F3} at {Where((int)check[4])}, " +
+				$"light grid {check[1]:F0} lux at {Where((int)check[5])}, vs all reflected light at once {check[2]:F0} lux, over {check[3]:F0} cells");
 			CameraController.Instance.SnapTo(Grid.CellToPosCCC(Cell(SiteWidth / 2, SiteHeight / 2), Grid.SceneLayer.Background), 26f);
+		}
+
+		/// <summary>Compares what the engine took for each cell of a rectangle with what its composition gives.</summary>
+		private static unsafe void Compare(string name, int x0, int y0, int width, int height, bool liquid)
+		{
+			float* v = stackalloc float[3];
+			float worst = 0f;
+			int cells = 0, mixed = 0, dimmed = 0;
+			ushort[] el = new ushort[16];
+			float[] ms = new float[16];
+			var composition = AppDomain.CurrentDomain.GetData(liquid ? "OniMods.LiquidComposition.1" : "OniMods.GasComposition.1") as Func<int, ushort[], float[], int>;
+			for (int y = y0; y < y0 + height; y++)
+			{
+				for (int x = x0; x < x0 + width; x++)
+				{
+					int cell = Cell(x, y);
+					Element element = Grid.Element[cell];
+					if (liquid ? !element.IsLiquid : !element.IsGas)
+					{
+						continue;
+					}
+					cells++;
+					if (composition != null && composition(cell, el, ms) > 1) mixed++;
+					LightNative.Cell(cell, v);
+					float expected = Mixtures.Expected(cell);
+					if (expected < 0.999f) dimmed++;
+					worst = Mathf.Max(worst, Mathf.Abs(v[2] - expected));
+				}
+			}
+			Expect(name, cells > 0 && worst < 0.002f, $"{cells} cells, {mixed} of them mixed, {dimmed} dim light; largest difference of what a cell lets through {worst:F4}" +
+				(composition == null ? " (no mixture mod: by the main substance)" : ""));
+		}
+
+		private static string Where(int cell)
+		{
+			if (!Grid.IsValidCell(cell)) return "-";
+			Grid.CellToXY(cell, out int x, out int y);
+			return $"({x - originX}, {y - originY}) {Grid.Element[cell].id} {Grid.Mass[cell]:F1} kg";
 		}
 
 		private static void Picture(string name)

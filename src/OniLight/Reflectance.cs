@@ -68,6 +68,18 @@ namespace OniLight
 
 		private const float Default = 0.30f;
 
+		// Gases that dim visible light, per kg of real mass (a cell lets through exp(-absorb x mass)). The others are clear: the
+		// molecules of air, hydrogen, carbon dioxide, methane, steam and the rest barely absorb visible light, and scattering
+		// by molecules shows only over kilometres. Chlorine is yellow-green: a cubic metre at one atmosphere (2.95 kg at 293 K)
+		// takes about a fifth of the light. Fallout (dust) and carbon vapour (soot) are dark: a kilogram in a cell takes about
+		// 70%.
+		private static readonly Dictionary<string, float> GasAbsorb = new Dictionary<string, float>
+		{
+			{ "ChlorineGas", 0.2231f / 2.95f }, { "Fallout", 1.2f }, { "CarbonGas", 1.2f },
+		};
+
+		private const float ReferenceMolar = 31.998f; // the equivalent mass of the gas mixture mod by pressure: of Oxygen
+
 		private static Dictionary<string, float> fromMods;
 		internal static int FromFiles { get; private set; }
 		internal static int FromCode { get; private set; }
@@ -157,6 +169,8 @@ namespace OniLight
 		{
 			Dictionary<string, float> mods = FromMods();
 			List<Element> elements = ElementLoader.elements;
+			// With the gas mixture mod evening out pressure, the game sees a gas cell's mass as the equivalent mass of Oxygen.
+			bool equivalent = AppDomain.CurrentDomain.GetData("OniMods.GasComposition.1") != null && MolarMasses.ByMolecules;
 			var table = new LightNative.ElementOptics[elements.Count];
 			ByCategoryCount = 0;
 			for (int i = 0; i < elements.Count; i++)
@@ -173,16 +187,22 @@ namespace OniLight
 				}
 				// The share a full cell lets through is the game's own (1 - lightAbsorptionFactor, as for sunlight); for any
 				// mass, exp(-absorb * mass).
-				float absorb = 0f;
+				float absorb = 0f, molarRatio = 0f;
 				if (e.IsLiquid && e.defaultValues.mass > 0f)
 				{
 					absorb = -Mathf.Log(1f - Mathf.Min(e.lightAbsorptionFactor, 0.99f)) / e.defaultValues.mass;
+				}
+				else if (e.IsGas && GasAbsorb.TryGetValue(id, out float gasAbsorb))
+				{
+					absorb = gasAbsorb;
+					molarRatio = equivalent ? MolarMasses.Of(e) / ReferenceMolar : 0f;
 				}
 				table[i] = new LightNative.ElementOptics
 				{
 					reflectance = reflectance,
 					absorb = absorb,
 					state = (byte)(e.state & Element.State.Solid),
+					molarRatio = molarRatio,
 				};
 			}
 			return table;

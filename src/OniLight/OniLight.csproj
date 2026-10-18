@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Code shared by our mods is compiled into each mod separately: the mods do not depend on each other. -->
-    <Compile Include="../Common/ModContext.cs" LinkBase="Common" />
+    <Compile Include="../Common/ModContext.cs;../Common/MolarMasses.cs" LinkBase="Common" />
     <!-- The light engine (native/oni_light.cpp, scripts/build-native.sh). Without it the mod leaves the game's light alone. -->
     <ModExtraFiles Include="../../native/build/oni_light.bin" Condition="Exists('../../native/build/oni_light.bin')" />
   </ItemGroup>

@@ -14,7 +14,7 @@ namespace OniLight
 	internal static unsafe class LightNative
 	{
 		// Must match ONI_LIGHT_ABI in native/oni_light.cpp.
-		private const int ExpectedAbi = 1;
+		private const int ExpectedAbi = 3;
 
 		/// <summary>Layout matches onilight::ElementOptics.</summary>
 		[StructLayout(LayoutKind.Sequential)]
@@ -24,6 +24,7 @@ namespace OniLight
 			public float absorb;
 			public byte state;
 			public byte pad0, pad1, pad2;
+			public float molarRatio;
 		}
 
 		/// <summary>Layout matches onilight::GridView.</summary>
@@ -39,6 +40,8 @@ namespace OniLight
 			public byte* buildMasks;
 			public ushort* builtBackwall;
 			public int* lightCount;
+			public float* temperature;
+			public float* mixThrough;
 		}
 
 		/// <summary>Layout matches onilight::SourceDesc.</summary>
@@ -65,7 +68,8 @@ namespace OniLight
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void FreeFn(int id);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int PreviewFn(GridView* grid, SourceDesc* source, int* cells, int* lux, int capacity);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void CellFn(int cell, float* out3);
-		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void CheckFn(GridView* grid, int x0, int y0, int x1, int y1, float* out4);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void CheckFn(GridView* grid, int x0, int y0, int x1, int y1, float* out6);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int WetFn(int id);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void StatsFn(long* out7);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int ReachFn(float range);
 
@@ -81,6 +85,7 @@ namespace OniLight
 		internal static CheckFn Check;
 		internal static StatsFn Stats;
 		internal static ReachFn Reach;
+		internal static WetFn Wet;
 
 		internal static bool Load()
 		{
@@ -114,6 +119,7 @@ namespace OniLight
 				Check = Bind<CheckFn>(module, "oni_light_check");
 				Stats = Bind<StatsFn>(module, "oni_light_stats");
 				Reach = Bind<ReachFn>(module, "oni_light_reach");
+				Wet = Bind<WetFn>(module, "oni_light_wet");
 				Info = Marshal.PtrToStringAnsi(Bind<InfoFn>(module, "oni_light_info")()) + "; this processor: " +
 					Marshal.PtrToStringAnsi(Bind<InfoFn>(module, "oni_light_variant")());
 				Available = true;

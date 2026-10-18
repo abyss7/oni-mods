@@ -60,10 +60,14 @@ namespace onilight
 	struct ElementOptics
 	{
 		float reflectance; // of a solid surface or a back wall of this element, 0..1
-		float absorb;      // a liquid lets through exp(-absorb * mass)
+		float absorb;      // a liquid or a gas lets through exp(-absorb * mass), mass in kg (0: the gas is clear)
 		uint8_t state;     // State
 		uint8_t pad[3];
+		float molarRatio;  // a gas whose shown mass is the equivalent of the reference gas (the gas mixture mod by pressure):
+		                   // its molar mass over the reference one; 0 when the shown mass is the real one
 	};
+
+	constexpr float ReferenceTemperature = 293.15f; // of the equivalent mass (sim/plugins/gas_mix_kernel.h)
 
 	// The game's grid, passed on each call (the managed arrays are pinned only for the call).
 	// Layout must match LightNative.GridView in src/OniLight/LightNative.cs.
@@ -78,6 +82,8 @@ namespace onilight
 		const uint8_t* buildMasks;          // C#: building flags, bit 1 = solid cell
 		const uint16_t* builtBackwall;      // C#: element of a built back wall, 0xFFFF = none
 		int32_t* lightCount;                // C#: the game's light grid, written as sources are added and removed
+		const float* temperature;           // simulation: cell temperature, K (for the real mass of a gas shown as equivalent)
+		const float* mixThrough;            // C#: what a cell holding a mixture lets through (by its composition); NaN = none
 	};
 
 	// Layout must match LightNative.SourceDesc in src/OniLight/LightNative.cs.
@@ -164,7 +170,7 @@ namespace onilight
 		SourceDesc desc{};
 		float traced = 0.0f; // the brightness its light was traced with (the entries are for it)
 		float scale = 1.0f;  // the share of it in the grid (a light bug dimmed)
-		bool wet = false;    // there is liquid in its area: its light changes as the liquid moves
+		bool wet = false;    // there is liquid, a gas that dims light or a mixture in its area: its light changes as they move
 		std::vector<Entry> direct, scattered;
 	};
 
@@ -464,7 +470,7 @@ namespace onilight
 		}
 
 		// What the cells of a rectangle let through and reflect, from the game's grid as it is now. Returns the number of
-		// liquid cells in it.
+		// cells whose light changes without an event from the game: liquids, gases that dim light, mixtures.
 		int RefreshOptics(const GridView& g, Rect r)
 		{
 			r = Clip(r);
@@ -486,9 +492,20 @@ namespace onilight
 					}
 					else
 					{
-						through_[c] = solid ? WindowThrough : e.state == Liquid ? expf(-e.absorb * g.mass[c]) : 1.0f;
+						float t = 1.0f;
+						const float mix = g.mixThrough ? g.mixThrough[c] : NAN;
+						if (solid) t = WindowThrough;
+						else if (mix == mix) t = mix, liquid++;
+						else if (e.state == Liquid) t = expf(-e.absorb * g.mass[c]), liquid++;
+						else if (e.absorb > 0.0f)
+						{
+							float mass = g.mass[c];
+							if (e.molarRatio > 0.0f && g.temperature) mass *= e.molarRatio * ReferenceTemperature / std::max(g.temperature[c], 1.0f);
+							t = expf(-e.absorb * mass);
+							liquid++;
+						}
+						through_[c] = t;
 						albedo_[c] = BackReflectance(g, c);
-						liquid += !solid && e.state == Liquid;
 					}
 				}
 			}

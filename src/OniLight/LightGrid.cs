@@ -20,6 +20,9 @@ namespace OniLight
 	/// - Built back walls (drywall and the like) are not in the game's grid: their elements are kept here, and the lights
 	///   around one are refreshed when it is built or removed.
 	/// - The placement preview of a lamp shows the new direct light.
+	/// - Liquid moves without telling the lights (a cell's mass changes, its element does not), and so do gases that dim light
+	///   and mixtures (Mixtures): a light with any of them in its area is traced again every WetPeriod seconds, a few such
+	///   lights per frame; and every light is traced again every SweepPeriod seconds, for whatever else changed unannounced.
 	/// </summary>
 	internal static unsafe class LightGrid
 	{
@@ -31,12 +34,17 @@ namespace OniLight
 		private static readonly List<int> takenOut = new List<int>();
 		private static readonly List<LightGridManager.LightGridEmitter> waiting = new List<LightGridManager.LightGridEmitter>();
 		private static readonly HashSet<Light2D> toRefresh = new HashSet<Light2D>();
+		private static readonly HashSet<int> wet = new HashSet<int>();
+		private static readonly Queue<int> wetQueue = new Queue<int>();
+		private const float WetPeriod = 2f, SweepPeriod = 10f;
+		private static float wetQuota, sweepQuota;
+		private static readonly Queue<int> sweepQueue = new Queue<int>();
 		private static int nextId;
 		private static ushort[] builtBackwall = new ushort[0];
 		private static readonly int[] previewCells = new int[1 << 16], previewLux = new int[1 << 16];
 
 		// Time spent in the engine (main thread), for the log and the measurements.
-		internal static long AddTicks, RemoveTicks, FreeTicks, PreviewTicks, Adds, Removes, Frees, Previews, Refreshes;
+		internal static long AddTicks, RemoveTicks, FreeTicks, PreviewTicks, Adds, Removes, Frees, Previews, Refreshes, WetRetraces;
 		private static float lastReport;
 
 		internal static void Apply(Harmony harmony)
@@ -60,7 +68,7 @@ namespace OniLight
 		internal static bool Ready => ready && Grid.elementIdx != null && Grid.mass != null && Grid.properties != null && Grid.LightCount != null;
 
 		// The managed arrays the engine reads and writes, pinned while a game is loaded.
-		private static GCHandle pinnedMasks, pinnedBuilt, pinnedLight;
+		private static GCHandle pinnedMasks, pinnedBuilt, pinnedLight, pinnedMix;
 		private static object pinnedFor;
 
 		private static void Pin()
@@ -69,6 +77,7 @@ namespace OniLight
 			pinnedMasks = GCHandle.Alloc(Grid.BuildMasks, GCHandleType.Pinned);
 			pinnedBuilt = GCHandle.Alloc(builtBackwall, GCHandleType.Pinned);
 			pinnedLight = GCHandle.Alloc(Grid.LightCount, GCHandleType.Pinned);
+			if (Mixtures.Through != null) pinnedMix = GCHandle.Alloc(Mixtures.Through, GCHandleType.Pinned);
 			pinnedFor = Grid.LightCount;
 		}
 
@@ -77,6 +86,7 @@ namespace OniLight
 			if (pinnedMasks.IsAllocated) pinnedMasks.Free();
 			if (pinnedBuilt.IsAllocated) pinnedBuilt.Free();
 			if (pinnedLight.IsAllocated) pinnedLight.Free();
+			if (pinnedMix.IsAllocated) pinnedMix.Free();
 			pinnedFor = null;
 		}
 
@@ -98,6 +108,8 @@ namespace OniLight
 				buildMasks = (byte*)pinnedMasks.AddrOfPinnedObject(),
 				builtBackwall = (ushort*)pinnedBuilt.AddrOfPinnedObject(),
 				lightCount = (int*)pinnedLight.AddrOfPinnedObject(),
+				temperature = Grid.temperature,
+				mixThrough = pinnedMix.IsAllocated ? (float*)pinnedMix.AddrOfPinnedObject() : null,
 			};
 		}
 
@@ -110,23 +122,28 @@ namespace OniLight
 			takenOut.Clear();
 			waiting.Clear();
 			toRefresh.Clear();
+			wet.Clear();
+			wetQueue.Clear();
+			wetQuota = sweepQuota = 0f;
+			sweepQueue.Clear();
 			nextId = 0;
-			AddTicks = RemoveTicks = FreeTicks = PreviewTicks = Adds = Removes = Frees = Previews = Refreshes = 0;
+			AddTicks = RemoveTicks = FreeTicks = PreviewTicks = Adds = Removes = Frees = Previews = Refreshes = WetRetraces = 0;
 			builtBackwall = new ushort[Grid.CellCount];
 			for (int i = 0; i < builtBackwall.Length; i++)
 			{
 				builtBackwall[i] = ushort.MaxValue;
 			}
-			Pin();
 			LightNative.Init(Grid.WidthInCells, Grid.HeightInCells);
 			LightNative.ElementOptics[] optics = Reflectance.Optics();
+			Mixtures.Initialise(optics);
+			Pin();
 			fixed (LightNative.ElementOptics* table = optics)
 			{
 				LightNative.Elements(table, optics.Length);
 			}
 			ready = true;
 			Debug.Log($"{ModContext.Tag} light grid {Grid.WidthInCells} x {Grid.HeightInCells}, {optics.Length} elements; reflectance from other mods: " +
-				$"{Reflectance.FromFiles} by file, {Reflectance.FromCode} by code; {Reflectance.ByCategoryCount} solids by category");
+				$"{Reflectance.FromFiles} by file, {Reflectance.FromCode} by code; {Reflectance.ByCategoryCount} solids by category; mixtures from the mods: {Mixtures.Sources}");
 		}
 
 		private static void Shutdown()
@@ -196,6 +213,8 @@ namespace OniLight
 			AddTicks += System.Diagnostics.Stopwatch.GetTimestamp() - start;
 			Adds++;
 			active.Add(id);
+			if (LightNative.Wet(id) != 0) wet.Add(id);
+			else wet.Remove(id);
 			return false;
 		}
 
@@ -388,6 +407,36 @@ namespace OniLight
 					}
 				}
 			}
+			Mixtures.Update();
+			// Lights with liquid in their area, a share per frame so that each is traced again every WetPeriod seconds.
+			if (wet.Count > 0)
+			{
+				wetQuota += wet.Count * Time.unscaledDeltaTime / WetPeriod;
+				while (wetQuota >= 1f)
+				{
+					if (wetQueue.Count == 0)
+					{
+						foreach (int id in wet) wetQueue.Enqueue(id);
+					}
+					wetQuota -= 1f;
+					Retrace(wetQueue.Dequeue());
+				}
+			}
+			// Every light, slowly: whatever changed without telling the lights (gas drifting in, a natural back wall) is caught
+			// within SweepPeriod seconds.
+			if (active.Count > 0)
+			{
+				sweepQuota += active.Count * Time.unscaledDeltaTime / SweepPeriod;
+				while (sweepQuota >= 1f)
+				{
+					if (sweepQueue.Count == 0)
+					{
+						foreach (int id in active) sweepQueue.Enqueue(id);
+					}
+					sweepQuota -= 1f;
+					Retrace(sweepQueue.Dequeue());
+				}
+			}
 			// What was taken out this frame and not put back is dropped.
 			if (takenOut.Count > 0)
 			{
@@ -399,6 +448,7 @@ namespace OniLight
 						continue;
 					}
 					LightNative.Free(id);
+					wet.Remove(id);
 					owners.Remove(id);
 					ids.Remove(emitter);
 					freeIds.Push(id);
@@ -414,6 +464,33 @@ namespace OniLight
 			}
 		}
 
+		/// <summary>Traces a source again from the grid as it is now (its emitter's current state).</summary>
+		private static void Retrace(int id)
+		{
+			if (!active.Contains(id) || !owners.TryGetValue(id, out LightGridManager.LightGridEmitter emitter) || !Grid.IsValidCell(emitter.state.origin))
+			{
+				return;
+			}
+			LightNative.SourceDesc desc = Desc(emitter.state);
+			LightNative.GridView view = View();
+			long start = System.Diagnostics.Stopwatch.GetTimestamp();
+			LightNative.Remove(&view, id, 0);
+			LightNative.Add(&view, id, &desc);
+			AddTicks += System.Diagnostics.Stopwatch.GetTimestamp() - start;
+			WetRetraces++;
+			if (LightNative.Wet(id) == 0) wet.Remove(id);
+			else wet.Add(id);
+		}
+
+		/// <summary>Traces every source again (for the self-check).</summary>
+		internal static void RetraceAll()
+		{
+			foreach (int id in new List<int>(active))
+			{
+				Retrace(id);
+			}
+		}
+
 		internal static void Report(string when)
 		{
 			long* s = stackalloc long[7];
@@ -421,7 +498,7 @@ namespace OniLight
 			double ms = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 			Debug.Log($"{ModContext.Tag} light {when}: {active.Count} sources; adds {Adds} ({AddTicks * ms:F1} ms, {(Adds > 0 ? AddTicks * ms * 1000.0 / Adds : 0):F1} us each), " +
 				$"removes {Removes} ({RemoveTicks * ms:F1} ms), frees {Frees} ({FreeTicks * ms:F1} ms), previews {Previews} ({PreviewTicks * ms:F1} ms), " +
-				$"refreshes asked by cells {Refreshes}; engine: traces {s[0]}, rescales {s[1]}, transport cell-steps {s[5]}");
+				$"refreshes asked by cells {Refreshes}, retraces for liquid and the sweep {WetRetraces} ({wet.Count} lights with liquid or gas that dims); mixtures {Mixtures.GasCells} gas and {Mixtures.LiquidCells} liquid cells dimming light (table redone {Mixtures.Updates} times); engine: traces {s[0]}, rescales {s[1]}, transport cell-steps {s[5]}");
 		}
 	}
 }

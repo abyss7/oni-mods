@@ -27,6 +27,7 @@ namespace OniLiquidMix
 			LiquidSurvey.Apply(harmony);
 			LiquidMixSave.Apply(harmony);
 			LiquidCases.Apply(harmony);
+			LiquidMixture.Publish();
 			Debug.Log($"[OniLiquidMix] {assembly.GetName().Version}, liquid survey: {LiquidSurvey.Mode}");
 		}
 	}

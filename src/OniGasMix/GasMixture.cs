@@ -229,9 +229,41 @@ namespace OniGasMix
 		/// </summary>
 		internal const string SharedKey = "OniMods.GasComposition.1";
 
+		internal const string CellsKey = "OniMods.GasMixtureCells.1";
+
 		internal static void Publish()
 		{
 			AppDomain.CurrentDomain.SetData(SharedKey, (Func<int, ushort[], float[], int>)Composition);
+			AppDomain.CurrentDomain.SetData(CellsKey, (Func<int[], int>)MixtureCells);
+		}
+
+		/// <summary>
+		/// The cells holding a mixture in the current snapshot, for other mods (application domain data "OniMods.GasMixtureCells.1"):
+		/// fills the array as far as it goes, returns how many there are (more than the array's length: call again with a
+		/// larger one). Main thread.
+		/// </summary>
+		private static int MixtureCells(int[] into)
+		{
+			if (!active)
+			{
+				return 0;
+			}
+			int found = 0, previous = -1;
+			for (int i = 0; i < count; i++)
+			{
+				int cell = buffer[Header + i * RecordInts];
+				if (cell == previous)
+				{
+					continue;
+				}
+				previous = cell;
+				if (found < into.Length)
+				{
+					into[found] = cell;
+				}
+				found++;
+			}
+			return found;
 		}
 
 		private static int Composition(int cell, ushort[] elements, float[] masses)
