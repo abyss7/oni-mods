@@ -43,7 +43,6 @@ namespace OniLight
 		private Light2D light;
 		private float shown = -1f;
 		private KBatchedAnimController anim;
-		private static readonly HashedString Chest = new HashedString("snapTo_chest");
 		private static readonly Vector2 DefaultOffset = new Vector2(0f, 1f); // the chest's cell
 		/// <summary>Where the light is drawn from, against the Duplicant's position (for the self-check).</summary>
 		internal Vector2 Offset => light != null ? light.Offset : DefaultOffset;
@@ -120,21 +119,17 @@ namespace OniLight
 		}
 
 		/// <summary>
-		/// The light is drawn at the chest as the animation has it, not at the Duplicant's cell: getting on or off a ladder,
-		/// jumping or climbing, the body moves in the animation while the position changes only at its end. The light's cell
-		/// (for the light grid) follows the same point, unless that is in a solid cell.
+		/// The light is drawn at the middle of the chest as the animation has it (Body), not at the Duplicant's cell: its
+		/// centre stays hidden behind the body, and getting on or off a ladder, jumping or climbing it moves with the body.
+		/// The light's cell (for the light grid) follows the same point, unless that is in a solid cell.
 		/// </summary>
 		private void FollowBody()
 		{
 			Vector2 offset = DefaultOffset;
-			if (anim != null)
+			if (Body.ChestCentre(anim, out Vector3 at))
 			{
-				Matrix4x4 chest = anim.GetSymbolTransform(Chest, out bool visible);
-				if (visible)
-				{
-					Vector3 at = chest.GetColumn(3), position = transform.GetPosition();
-					offset = new Vector2(at.x - position.x, at.y - position.y);
-				}
+				Vector3 position = transform.GetPosition();
+				offset = new Vector2(at.x - position.x, at.y - position.y);
 			}
 			int cell = Grid.PosToCell(transform.GetPosition() + (Vector3)offset);
 			if (!Grid.IsValidCell(cell) || Grid.Solid[cell])

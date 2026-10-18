@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
 using OniCommon;
 using Unity.Collections.LowLevel.Unsafe;
@@ -18,17 +19,19 @@ namespace OniLight
 	/// - of a source the colony made (lamps, the printing pod, rocket engines): while a Duplicant can walk into its light,
 	///   checked for each such source about once a second; a light a Duplicant carries (the glow stick) and the glow in the water at the start always;
 	/// - of the sun and of everything else (creatures, plants, glowing rocks, things found in the world): only in the cells
-	///   a Duplicant sees at that moment (straight lines from their heads, up to SightRadius cells, through anything but
-	///   opaque solids), redone several times a second.
+	///   a Duplicant sees at that moment (straight lines from their heads, where the animation has them, to any part of a
+	///   cell, up to SightRadius cells, through anything but opaque solids), redone ten times a second; what they start to
+	///   see shows over 0.3 s, what they stop seeing fades over 0.7 s.
 	/// The light itself (for plants, work and everything else in the game) is not changed by this: only the player's view.
 	///
 	/// In a cell the player sees nothing in: the tooltip under the cursor is empty, nothing there can be selected, names,
-	/// bars and status icons of things there are hidden, pop-ups are not shown; and dig and build orders can be placed only
-	/// in cells with some light (once placed, they stay when the light goes).
+	/// bars and status icons of things there are hidden, pop-ups are not shown; in the overlays no priorities show there and
+	/// nothing there is highlighted or brought forward (an overlay sees such a cell as not explored); and dig and build
+	/// orders can be placed only in cells with some light (once placed, they stay when the light goes).
 	/// </summary>
 	internal static unsafe class Darkness
 	{
-		private const float SightRadius = 32f, SightPeriod = 0.25f, SeenPeriod = 1f;
+		private const float SightRadius = 32f, SightPeriod = 0.1f, SeenPeriod = 1f;
 		private const int SourceCellsChecked = 48;
 
 		private const int Margin = 24; // cells beyond the screen kept up to date, for the next frame's fog when the view moves
@@ -36,7 +39,8 @@ namespace OniLight
 		private static float lastSight = -1f, seenQuota;
 		private static readonly Queue<int> seenQueue = new Queue<int>();
 		private static readonly int[] sourceCells = new int[SourceCellsChecked];
-		private static int[] eyes = new int[64];
+		private static float[] eyes = new float[128]; // x, y pairs, in cells
+		private static readonly Vector3 HeadAboveFeet = new Vector3(0f, 1.6f), HeadAboveChest = new Vector3(0f, 0.6f);
 		internal static long SightUpdates, SeenChecks, Views;
 		internal const string SharedKey = "OniMods.BlackoutShown.1";
 
@@ -54,6 +58,21 @@ namespace OniLight
 			harmony.Patch(AccessTools.Method(typeof(PopFXManager), nameof(PopFXManager.SpawnFX),
 				new[] { typeof(Sprite), typeof(Sprite), typeof(string), typeof(Transform), typeof(Vector3), typeof(float), typeof(bool), typeof(bool), typeof(bool) }),
 				prefix: new HarmonyMethod(typeof(Darkness), nameof(NoPopUpInTheDark)));
+			// Overlays: priorities, objects highlighted or brought forward, their icons, only where the player sees something.
+			harmony.Patch(AccessTools.Method(typeof(PrioritizableRenderer), "renderEveryTickVisitHelper"), prefix: new HarmonyMethod(typeof(Darkness), nameof(NoPriorityInTheDark)));
+			harmony.Patch(AccessTools.Method(typeof(OverlayScreen), "LateUpdate"), prefix: new HarmonyMethod(typeof(Darkness), nameof(OverlayBegins)),
+				finalizer: new HarmonyMethod(typeof(Darkness), nameof(OverlayEnds)));
+			harmony.Patch(AccessTools.Method(typeof(Grid), nameof(Grid.IsVisible)), postfix: new HarmonyMethod(typeof(Darkness), nameof(NotVisibleInTheDark)));
+			try
+			{
+				// Generic: one instantiation for a class patches the code all classes share.
+				MethodInfo add = AccessTools.Method(typeof(OverlayModes.Mode), "AddTargetIfVisible").MakeGenericMethod(typeof(SaveLoadRoot));
+				harmony.Patch(add, prefix: new HarmonyMethod(typeof(Darkness), nameof(NoOverlayTargetInTheDark)));
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"{ModContext.Tag} darkness: overlay targets are not limited to the light: {e.Message}");
+			}
 			// Orders only where there is some light.
 			harmony.Patch(AccessTools.Method(typeof(DigTool), "OnDragTool"), prefix: new HarmonyMethod(typeof(Darkness), nameof(OrderOnlyInLight)));
 			harmony.Patch(AccessTools.Method(typeof(BuildTool), "TryBuild"), prefix: new HarmonyMethod(typeof(Darkness), nameof(OrderOnlyInLight)));
@@ -94,7 +113,14 @@ namespace OniLight
 
 		private static bool NoStatusIconInTheDark(ref StatusItemRenderer.Entry __instance)
 		{
-			return __instance.transform == null || !Dark(__instance.transform.GetPosition());
+			if (__instance.transform == null)
+			{
+				return true;
+			}
+			// Where the game puts the icons: over a building's middle, otherwise at the object.
+			Vector3 at = __instance.isBuilding ? __instance.buildingPos : __instance.transform.GetPosition();
+			if (__instance.isBuilding && __instance.building != null) at.x += (float)((__instance.building.Def.WidthInCells - 1) % 2) / 2f;
+			return !Dark(at);
 		}
 
 		private static bool NoPopUpInTheDark(Transform target_transform, Vector3 offset, ref PopFX __result)
@@ -105,6 +131,54 @@ namespace OniLight
 				return true;
 			}
 			__result = null;
+			return false;
+		}
+
+		private static bool NoPriorityInTheDark(object obj, ref Util.IterationInstruction __result)
+		{
+			if (obj is Prioritizable prioritizable && prioritizable != null && Dark(prioritizable.transform.GetPosition()))
+			{
+				__result = Util.IterationInstruction.Continue;
+				return false;
+			}
+			return true;
+		}
+
+		// While an overlay updates, a cell the player sees nothing in counts as not visible (as if not explored yet).
+		private static int overlayScope;
+
+		private static void OverlayBegins() => overlayScope++;
+
+		private static Exception OverlayEnds(Exception __exception)
+		{
+			overlayScope--;
+			return __exception;
+		}
+
+		private static void NotVisibleInTheDark(int cell, ref bool __result)
+		{
+			if (__result && overlayScope > 0 && Dark(cell))
+			{
+				__result = false;
+			}
+		}
+
+		/// <summary>An object goes into an overlay's highlighted layer only if the player sees some cell of it.</summary>
+		private static bool NoOverlayTargetInTheDark(object[] __args)
+		{
+			if (shown == null || !(__args[0] is IUniformGridObject target))
+			{
+				return true;
+			}
+			Vector2 min = target.PosMin(), max = target.PosMax();
+			for (int y = (int)min.y; y <= max.y; y++)
+			{
+				for (int x = (int)min.x; x <= max.x; x++)
+				{
+					int cell = Grid.XYToCell(x, y);
+					if (Grid.IsValidCell(cell) && !Dark(cell)) return true;
+				}
+			}
 			return false;
 		}
 
@@ -152,23 +226,47 @@ namespace OniLight
 				{
 					continue;
 				}
-				int feet = Grid.PosToCell(minion);
-				if (!Grid.IsValidCell(feet))
+				if (!Grid.IsValidCell(Grid.PosToCell(minion)))
 				{
 					continue;
 				}
-				if (count == eyes.Length)
+				if (2 * count + 2 > eyes.Length)
 				{
 					Array.Resize(ref eyes, eyes.Length * 2);
 				}
-				eyes[count++] = Grid.IsValidCell(Grid.CellAbove(feet)) ? Grid.CellAbove(feet) : feet;
+				Vector3 head = Head(minion);
+				eyes[2 * count] = head.x;
+				eyes[2 * count + 1] = head.y;
+				count++;
 			}
 			LightNative.GridView view = LightGrid.View();
-			fixed (int* e = eyes)
+			fixed (float* e = eyes)
 			{
 				LightNative.Sight(&view, e, count, SightRadius);
 			}
 			SightUpdates++;
+		}
+
+		/// <summary>
+		/// Where a Duplicant's eyes are (world position: a cell is a unit): above the chest as the animation has it (getting
+		/// on a ladder, jumping, climbing: the body moves before the position does), otherwise above the feet; never inside
+		/// a solid cell (then the head's cell).
+		/// </summary>
+		internal static Vector3 Head(MinionIdentity minion)
+		{
+			Vector3 position = minion.transform.GetPosition(), head = position + HeadAboveFeet;
+			if (Body.ChestCentre(minion.GetComponent<KBatchedAnimController>(), out Vector3 chest))
+			{
+				head = chest + HeadAboveChest;
+			}
+			int cell = Grid.PosToCell(head);
+			if (!Grid.IsValidCell(cell) || Grid.Solid[cell])
+			{
+				int feet = Grid.PosToCell(position);
+				cell = Grid.IsValidCell(Grid.CellAbove(feet)) ? Grid.CellAbove(feet) : feet;
+				head = Grid.CellToPosCCC(cell, Grid.SceneLayer.Move);
+			}
+			return head;
 		}
 
 		/// <summary>The colony's sources, a share per frame so that each is checked about every SeenPeriod seconds.</summary>
@@ -249,7 +347,7 @@ namespace OniLight
 			{
 				return;
 			}
-			LightNative.UpdateShown(minX, minY, maxX, maxY, Grid.exposedToSunlight, world.currentSunlightIntensity);
+			LightNative.UpdateShown(minX, minY, maxX, maxY, Grid.exposedToSunlight, world.currentSunlightIntensity, Mathf.Min(Time.unscaledDeltaTime, 0.1f));
 			shown = LightNative.Shown();
 			Views++;
 		}

@@ -197,13 +197,13 @@ namespace
 		Expect(f.engine.SeenLux(lampCell) == 0.0f, "the player's view: a colony light not yet seen is dark");
 		f.engine.SetSeen(0, true);
 		Expect(Near(f.engine.SeenLux(lampCell), f.engine.Direct(lampCell), 1e-3), "the player's view: a seen colony light shows", f.engine.SeenLux(lampCell), f.engine.Direct(lampCell));
-		const int32_t eye = f.grid.Cell(20, 21);
-		f.engine.Sight(g, &eye, 1, 32.0f);
-		Expect(f.engine.InSight(f.grid.Cell(25, 21)) && !f.engine.InSight(bugCell), "the player's view: the sight stops at a wall");
-		const int32_t eye2 = f.grid.Cell(45, 21);
-		f.engine.Sight(g, &eye2, 1, 32.0f);
+		const float eye[2] = { 20.5f, 21.5f };
+		f.engine.Sight(g, eye, 1, 32.0f);
+		Expect(f.engine.InSight(f.grid.Cell(25, 21)) && f.engine.InSight(f.grid.Cell(30, 21)) && !f.engine.InSight(bugCell), "the player's view: the sight stops at a wall (its face seen)");
+		const float eye2[2] = { 45.5f, 21.5f };
+		f.engine.Sight(g, eye2, 1, 32.0f);
 		Expect(f.engine.InSight(bugCell) && f.engine.NaturalLux(bugCell) > 0.0f, "the player's view: a natural light shows where a duplicant sees");
-		f.engine.UpdateShown({ 0, 0, 60, 40 }, nullptr, 0.0f);
+		f.engine.UpdateShown({ 0, 0, 60, 40 }, nullptr, 0.0f, 1.0f);
 		const float lux = f.engine.SeenLux(lampCell), expected = std::min(255.0f, logf(1.0f + lux) * 255.0f / logf(1.0f + FullLux) + 0.5f);
 		const uint8_t* shown = f.engine.Shown();
 		Expect(shown[lampCell] == (uint8_t)expected && shown[f.grid.Cell(5, 20)] == 0, "the player's view: by the logarithm of the light, 0 in the dark", shown[lampCell], expected);
@@ -222,6 +222,61 @@ namespace
 		double left = 0;
 		for (int c = 0; c < 61 * 41; c++) left = std::max(left, (double)fabsf(f.engine.SeenLux(c)) + fabsf(f.engine.NaturalLux(c)));
 		Expect(left < 1e-3, "the player's view: nothing left after removing", left, 0);
+	}
+
+	// The sight through a gap one cell wide in a ceiling: as the eye comes closer, the cells seen above grow in number
+	// smoothly once the gap opens at all (first a thin line along the one direction through both corners, then a wedge
+	// that widens with every half cell; no jump to a whole sector), the cone is symmetric about the gap, and nothing is
+	// seen through the solid ceiling. Then the fading of what is seen, for the player.
+	void SightThroughGap()
+	{
+		Fixture f(Grid(61, 41, Oxygen));
+		for (int x = 0; x < 61; x++) f.grid.Set(x, 20, Granite);
+		f.grid.Set(30, 20, Oxygen); // the gap
+		GridView g = f.View();
+		int previous = -1;
+		bool smooth = true, symmetric = true, blocked = true;
+		std::vector<int> counts;
+		for (int step = 0; step <= 16; step++)
+		{
+			const float eye[2] = { 30.5f + 8.0f - step * 0.5f, 18.5f };
+			f.engine.Sight(g, eye, 1, 32.0f);
+			int above = 0;
+			for (int y = 21; y < 41; y++)
+				for (int x = 0; x < 61; x++) above += f.engine.InSight(f.grid.Cell(x, y));
+			counts.push_back(above);
+			if (previous >= 0 && above < previous) smooth = false;
+			if (previous >= 20 && above > previous * 3 / 2 + 10) smooth = false;
+			previous = above;
+		}
+		const float centre[2] = { 30.5f, 18.5f };
+		f.engine.Sight(g, centre, 1, 32.0f);
+		for (int y = 21; y < 41; y++)
+			for (int d = 1; d < 30; d++) symmetric = symmetric && f.engine.InSight(f.grid.Cell(30 - d, y)) == f.engine.InSight(f.grid.Cell(30 + d, y));
+		// Nothing above the ceiling far to the side of the gap (the line would cross the ceiling).
+		blocked = !f.engine.InSight(f.grid.Cell(10, 22)) && !f.engine.InSight(f.grid.Cell(50, 22)) && f.engine.InSight(f.grid.Cell(30, 30));
+		printf("   cells seen above the gap as the eye comes from 8 cells aside to under it:");
+		for (int c : counts) printf(" %d", c);
+		printf("\n");
+		Expect(smooth, "sight through a gap: the cone grows step by step");
+		Expect(symmetric, "sight through a gap: symmetric under the gap");
+		Expect(blocked, "sight through a gap: nothing through the solid ceiling");
+		// The player's view: the sun above the gap shows in over SightIn, fades over SightOut.
+		// 200 lux of sun: below the full brightness, so the fading shows in the value.
+		std::vector<uint8_t> exposed(61 * 41, 255);
+		f.engine.UpdateShown({ 0, 0, 60, 40 }, exposed.data(), 200.0f, 0.1f);
+		const uint8_t* shown = f.engine.Shown();
+		const int cell = f.grid.Cell(30, 30);
+		const uint8_t early = shown[cell];
+		f.engine.UpdateShown({ 0, 0, 60, 40 }, exposed.data(), 200.0f, 0.3f);
+		const uint8_t full = shown[cell];
+		const float away[2] = { 5.5f, 18.5f };
+		f.engine.Sight(g, away, 1, 32.0f);
+		f.engine.UpdateShown({ 0, 0, 60, 40 }, exposed.data(), 200.0f, 0.2f);
+		const uint8_t fading = shown[cell];
+		f.engine.UpdateShown({ 0, 0, 60, 40 }, exposed.data(), 200.0f, 0.6f);
+		const uint8_t gone = shown[cell];
+		Expect(early > 0 && early < full && fading > 0 && fading < full && gone == 0, "sight fades in and out for the player", early, fading);
 	}
 
 	// A ceiling light in a room 12 x 4 of Granite: the ceiling and the tops of the walls, out of its direct light, get the
@@ -426,6 +481,7 @@ int main()
 	Shapes();
 	CeilingRoom();
 	Tunnel();
+	SightThroughGap();
 	Reflection();
 	Variants();
 	Rescale();

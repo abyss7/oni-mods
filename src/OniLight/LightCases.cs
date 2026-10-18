@@ -211,8 +211,23 @@ namespace OniLight
 							Telepad pod = Components.Telepads.Items.Count > 0 ? Components.Telepads.Items[0] : null;
 							if (pod != null && Mod.Options.Blackout) Blackout(pod);
 						}
-						else if (frame == 151)
+						else if (frame == 151 && Mod.Options.Blackout)
 						{
+							// The priorities overlay over the closed dark room: no priority of its lamps shows.
+							OverlayScreen.Instance.ToggleOverlay(OverlayModes.Priorities.ID, allowSound: false);
+							CameraController.Instance.SnapTo(Grid.CellToPosCCC(Cell(RoomA + RoomWidth / 2, Floor + 3), Grid.SceneLayer.Background), 8f);
+						}
+						else if (frame == 170 && Mod.Options.Blackout)
+						{
+							var shownPriorities = (List<Prioritizable>)AccessTools.Field(typeof(PrioritizableRenderer), "prioritizables").GetValue(Game.Instance.prioritizableRenderer);
+							Prioritizable lamp = floorLampA != null ? floorLampA.GetComponent<Prioritizable>() : null;
+							Expect("no priority shows in the dark (the priorities overlay)", lamp != null && Darkness.Dark(Grid.PosToCell(floorLampA)) && !shownPriorities.Contains(lamp),
+								$"the lamp dark {floorLampA != null && Darkness.Dark(Grid.PosToCell(floorLampA))}, priorities shown {shownPriorities.Count}, the lamp's among them {lamp != null && shownPriorities.Contains(lamp)}");
+							Picture("priorities");
+						}
+						else if (frame == 171)
+						{
+							OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
 							// All five niches (x 4..48) in the picture.
 							CameraController.Instance.SnapTo(Grid.CellToPosCCC(Cell(26, Chamber + 2), Grid.SceneLayer.Background), 13f);
 						}
@@ -222,19 +237,35 @@ namespace OniLight
 						}
 						else if (frame == 201)
 						{
-							if (Grid.IsValidCell(PoolGlow.Cell)) CameraController.Instance.SnapTo(Grid.CellToPosCCC(PoolGlow.Cell, Grid.SceneLayer.Background), 10f);
+							// A close look at a glow stick: its centre hidden by the body.
+							if (glowDupes.Count > 0 && glowDupes[0] != null) CameraController.Instance.SnapTo(glowDupes[0].transform.GetPosition() + new Vector3(0f, 1f, 0f), 3f);
 						}
 						else if (frame == 250)
 						{
-							if (Grid.IsValidCell(PoolGlow.Cell)) Picture("pool");
+							Picture("glow_close");
 						}
 						else if (frame == 251)
 						{
-							LightGrid.Report("after the scenes");
-							Debug.Log($"{ModContext.Tag} LightCases: {passed} passed, {failed} failed; closing the game");
-							phase = 11;
-							App.Quit();
+							// A close look at the glow in the water before anyone finds it; then a Duplicant finds it.
+							if (Grid.IsValidCell(PoolGlow.Cell)) CameraController.Instance.SnapTo(Grid.CellToPosCCC(PoolGlow.Cell, Grid.SceneLayer.Background), 5f);
 						}
+						else if (frame == 300)
+						{
+							if (Grid.IsValidCell(PoolGlow.Cell)) Picture("pool");
+						}
+						else if (frame == 301)
+						{
+							BringFinder();
+							Next(now);
+						}
+						break;
+					// Until the glow in the water has faded out after it was found (at most two minutes).
+					case 10 when PoolGlow.Gone || PoolGlow.FoundAt < 0f && now >= phaseTime + 5f || now >= phaseTime + 120f:
+						PoolFoundCheck();
+						LightGrid.Report("after the scenes");
+						Debug.Log($"{ModContext.Tag} LightCases: {passed} passed, {failed} failed; closing the game");
+						phase = 11;
+						App.Quit();
 						break;
 				}
 			}
@@ -666,7 +697,16 @@ namespace OniLight
 			int lux = DarkWork.Lux(cell), above = DarkWork.Lux(Grid.CellAbove(cell));
 			Expect("the glow in the water lights its pool and shows", Grid.Element[cell].id == SimHashes.Water && lux >= 100 && !Darkness.Dark(cell),
 				$"at {x},{y}: {lux} lux, a cell up {above}, dark to the player {Darkness.Dark(cell)}, charge {PoolGlow.Charge:F2}, found at {PoolGlow.FoundAt:F0}");
-			// A Duplicant of the scene is brought near it to find it (unless one of the colony has already).
+		}
+
+		/// <summary>A Duplicant of the scene is brought beside the glow in the water to find it (unless one of the colony has already).</summary>
+		private static void BringFinder()
+		{
+			int cell = PoolGlow.Cell;
+			if (!Grid.IsValidCell(cell))
+			{
+				return;
+			}
 			finder = PoolGlow.FoundAt < 0f && glowDupes.Count > 4 ? glowDupes[4] : null;
 			int stand = finder != null ? StandNear(cell) : Grid.InvalidCell;
 			if (Grid.IsValidCell(stand))
@@ -728,14 +768,21 @@ namespace OniLight
 			foreach (GameObject g in glowDupes)
 			{
 				GlowStick stick = g != null ? g.GetComponent<GlowStick>() : null;
-				if (stick != null) glows.Add($"charge {stick.Charge():F2}, {DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(g)))} lux, drawn at {stick.Offset.x:F2},{stick.Offset.y:F2}");
+				Vector3 eyes = Darkness.Head(g.GetComponent<MinionIdentity>()) - g.transform.GetPosition();
+				KBatchedAnimController anim = g.GetComponent<KBatchedAnimController>();
+				string symbols = "";
+				foreach (HashedString name in new[] { Body.Torso, Body.ChestPoint, new HashedString("snapTo_neck"), new HashedString("headshape") })
+				{
+					if (Body.Centre(anim, name, out Vector3 point)) symbols += $" {name}@{point.x - g.transform.GetPosition().x:F2},{point.y - g.transform.GetPosition().y:F2}";
+				}
+				Debug.Log($"{ModContext.Tag} LightCases: {g.GetProperName()} flipped {anim.FlipX}:{symbols}");
+				if (stick != null) glows.Add($"charge {stick.Charge():F2}, {DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(g)))} lux, drawn at {stick.Offset.x:F2},{stick.Offset.y:F2}, eyes at {eyes.x:F2},{eyes.y:F2}");
 			}
 			// Drawn at the chest as the animation has it: standing, about a cell above the feet.
 			GlowStick first = glowDupes.Count > 0 && glowDupes[0] != null ? glowDupes[0].GetComponent<GlowStick>() : null;
 			Expect("glow sticks light the dark", first != null && DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(glowDupes[0]))) >= 300
 				&& Mathf.Abs(first.Offset.x) < 0.5f && first.Offset.y > 0.4f && first.Offset.y < 1.6f,
 				string.Join("; ", glows));
-			PoolFoundCheck();
 			int pocket = Cell(RoomB + RoomWidth + 2, Floor);
 			Effects effects = darkDupe.GetComponent<Effects>();
 			bool asleep = darkDupe.HasTag(GameTags.Asleep);

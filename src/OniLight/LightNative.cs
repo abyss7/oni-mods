@@ -14,7 +14,7 @@ namespace OniLight
 	internal static unsafe class LightNative
 	{
 		// Must match ONI_LIGHT_ABI in native/oni_light.cpp.
-		private const int ExpectedAbi = 5;
+		private const int ExpectedAbi = 6;
 
 		/// <summary>Layout matches onilight::ElementOptics.</summary>
 		[StructLayout(LayoutKind.Sequential)]
@@ -73,8 +73,8 @@ namespace OniLight
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int WetFn(int id);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void SetSeenFn(int id, int seen);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int SourceCellsFn(int id, int* cells, int capacity);
-		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void SightFn(GridView* grid, int* eyes, int count, float radius);
-		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void UpdateShownFn(int x0, int y0, int x1, int y1, byte* exposed, float sunLux);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void SightFn(GridView* grid, float* eyes, int count, float radius);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void UpdateShownFn(int x0, int y0, int x1, int y1, byte* exposed, float sunLux, float dt);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate byte* ShownFn();
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void SeenCellFn(int cell, float* out3);
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void StatsFn(long* out7);

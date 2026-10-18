@@ -168,7 +168,9 @@ namespace OniLight
 		{
 			var go = new GameObject("OniLightPoolGlow");
 			go.SetActive(false);
-			go.transform.SetPosition(Grid.CellToPosCCC(at, Grid.SceneLayer.Liquid));
+			// On the very bottom: the centre of the glow at the floor's face, as if the stick lay on it (its cell for the light
+			// grid is still the water's, a hair above the edge).
+			go.transform.SetPosition(Grid.CellToPosCBC(at, Grid.SceneLayer.Liquid) + new Vector3(0f, 0.02f, 0f));
 			instance = go.AddComponent<PoolGlow>();
 			light = go.AddComponent<Light2D>();
 			light.Lux = Mathf.RoundToInt(GlowStick.Lux);

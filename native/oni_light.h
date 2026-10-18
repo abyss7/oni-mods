@@ -52,6 +52,7 @@ namespace onilight
 	constexpr float MinScattered = 0.05f;     // less scattered light than this is not kept
 	constexpr float MaxRange = 64.0f;         // a larger radius (another mod's light) is taken as this
 	constexpr float FullLux = 500.0f;         // the player sees a cell at the game's own brightness from this light
+	constexpr float SightIn = 0.3f, SightOut = 0.7f; // s: what duplicants start or stop seeing shows or fades for the player
 
 	enum State : uint8_t { Vacuum = 0, Gas = 1, Liquid = 2, Solid = 3 };
 	enum Shape : int32_t { Circle = 0, Cone = 1, Quad = 2 };
@@ -261,6 +262,7 @@ namespace onilight
 			seen_.assign(n, 0.0f);
 			natural_.assign(n, 0.0f);
 			sight_.assign(n, 0);
+			sightLevel_.assign(n, 0.0f);
 			sightCells_.clear();
 			shown_.assign(n, 0);
 			through_.assign(n, 1.0f);
@@ -352,55 +354,114 @@ namespace onilight
 			return n;
 		}
 
-		// What duplicants see now: from each eye cell, straight lines up to `radius` cells that pass open and transparent
-		// cells (gas, liquid, windows); the first solid cell on a line is seen too (its face). The light of things not made
-		// by the colony and of the sun shows to the player only in these cells.
-		void Sight(const GridView& g, const int32_t* eyes, int count, float radius)
+		// What duplicants see now. An eye is a point (x, y in cells: cell (x, y) spans [x, x + 1) x [y, y + 1)), where the
+		// head is in the animation, not a cell's centre. A cell is seen if a straight line from an eye reaches some part of
+		// it through open and transparent cells only (gas, liquid, windows), and its centre is within `radius`; a solid cell
+		// seen is its face. Exact by angles: four quadrants (east, west, north, south, each to 45 degrees off its axis) are
+		// swept row by row away from the eye, keeping the intervals of directions (slopes) not yet shadowed; a cell is seen
+		// if its interval overlaps one of them, and an opaque cell takes its interval out for the rows behind it. Walking
+		// towards a gap, the cone seen through it widens cell by cell. The light of things not made by the colony and of the
+		// sun shows to the player only in these cells.
+		void Sight(const GridView& g, const float* eyes, int count, float radius)
 		{
 			for (int32_t c : sightCells_) sight_[c] = 0;
 			sightCells_.clear();
 			if (count <= 0 || w_ == 0) return;
-			const Tree& tree = TreeFor(radius / 1.5f);
-			const size_t n = tree.dx.size();
-			reach_.resize(n);
-			float* see = reach_.data();
 			for (int k = 0; k < count; k++)
 			{
-				const int eye = eyes[k];
-				if (eye < 0 || eye >= w_ * h_) continue;
-				const int ex = eye % w_, ey = eye / w_;
-				for (size_t i = 0; i < n; i++)
+				const float ex = eyes[2 * k], ey = eyes[2 * k + 1];
+				if (!(ex >= 0.0f && ey >= 0.0f && ex < (float)w_ && ey < (float)h_)) continue;
+				MarkSeen((int)ex, (int)ey);
+				for (int q = 0; q < 4; q++) SightQuadrant(g, ex, ey, q, radius);
+			}
+		}
+
+		void MarkSeen(int x, int y)
+		{
+			if (x < 0 || y < 0 || x >= w_ || y >= h_) return;
+			const int cell = y * w_ + x;
+			if (!sight_[cell])
+			{
+				sight_[cell] = 1;
+				sightCells_.push_back(cell);
+			}
+		}
+
+		// One quadrant: q 0 east (+x), 1 west (-x), 2 north (+y), 3 south (-y); p the axis away from the eye, s across it.
+		void SightQuadrant(const GridView& g, float ex, float ey, int q, float radius)
+		{
+			const bool alongX = q < 2;
+			const int dir = q == 0 || q == 2 ? 1 : -1;
+			const float ep = alongX ? ex : ey, es = alongX ? ey : ex;
+			const int ip = (int)ep;
+			const float eps = 1e-5f, r2 = radius * radius;
+			float open[2 * 64];
+			int n = 1;
+			open[0] = -1.0f;
+			open[1] = 1.0f;
+			float shade[2 * 160];
+			const int rows = (int)radius + 1;
+			for (int k = 1; k <= rows && n > 0; k++)
+			{
+				const int cp = ip + dir * k; // the row's cell index along p
+				// Distance along p from the eye to the row's near and far edges.
+				const float a = std::max(dir > 0 ? (float)cp - ep : ep - (float)(cp + 1), eps), b = a + 1.0f;
+				if (a * a > r2) break;
+				const int j0 = (int)floorf(es - b), j1 = (int)floorf(es + b);
+				int shades = 0;
+				for (int j = j0; j <= j1; j++)
 				{
-					const int x = ex + tree.dx[i], y = ey + tree.dy[i];
-					const int p = tree.parent[i];
-					float open = 1.0f;
-					if (p >= 0)
+					const float lo = (float)j - es, hi = lo + 1.0f;
+					const float slo = std::min(lo / a, lo / b), shi = std::max(hi / a, hi / b);
+					if (shi <= -1.0f || slo >= 1.0f) continue;
+					const float cs = lo + 0.5f, cpd = a + 0.5f;
+					bool seen = false;
+					for (int i = 0; i < n && !seen; i++) seen = slo < open[2 * i + 1] - eps && shi > open[2 * i] + eps;
+					const int x = alongX ? cp : j, y = alongX ? j : cp;
+					if (seen && cs * cs + cpd * cpd <= r2) MarkSeen(x, y);
+					if (Clear(g, x, y) <= 0.0f && shades < 160)
 					{
-						if (see[p] <= 0.0f) { see[i] = 0.0f; continue; }
-						const int px = ex + tree.dx[p], py = ey + tree.dy[p];
-						open = p == 0 ? 1.0f : Clear(g, px, py);
-						if (tree.diagonal[i]) open *= std::max(Clear(g, x, py), Clear(g, px, y));
-					}
-					see[i] = open;
-					if (open <= 0.0f || x < 0 || y < 0 || x >= w_ || y >= h_) continue;
-					const int cell = y * w_ + x;
-					if (!sight_[cell])
-					{
-						sight_[cell] = 1;
-						sightCells_.push_back(cell);
+						shade[2 * shades] = slo;
+						shade[2 * shades + 1] = shi;
+						shades++;
 					}
 				}
+				// The opaque cells of the row shadow the rows behind it.
+				for (int t = 0; t < shades; t++) n = Subtract(open, n, shade[2 * t], shade[2 * t + 1], eps);
 			}
+		}
+
+		// Takes [lo, hi] out of the sorted open intervals; drops what is narrower than eps. Returns their number.
+		static int Subtract(float* open, int n, float lo, float hi, float eps)
+		{
+			float out[2 * 64];
+			int m = 0;
+			for (int i = 0; i < n; i++)
+			{
+				const float u = open[2 * i], v = open[2 * i + 1];
+				if (hi <= u || lo >= v)
+				{
+					if (m < 64) { out[2 * m] = u; out[2 * m + 1] = v; m++; }
+					continue;
+				}
+				if (lo > u + eps && m < 64) { out[2 * m] = u; out[2 * m + 1] = lo; m++; }
+				if (hi < v - eps && m < 64) { out[2 * m] = hi; out[2 * m + 1] = v; m++; }
+			}
+			for (int i = 0; i < 2 * m; i++) open[i] = out[i];
+			return m;
 		}
 
 		// What the player sees in each cell of a rectangle, kept by cell (Shown): 0 is darkness, 255 the game's own picture;
 		// the brightness grows with the logarithm of the light up to full at FullLux. The light seen: of the colony's
 		// sources a duplicant can walk into, and, in the cells duplicants see, of the others and of the sun (exposed
 		// 0..255 times sunLux).
-		void UpdateShown(Rect r, const uint8_t* exposed, float sunLux)
+		// What duplicants see comes and goes smoothly for the player: a cell they start to see shows over SightIn seconds,
+		// one they stop seeing fades over SightOut (`dt`: the time since the last call, s).
+		void UpdateShown(Rect r, const uint8_t* exposed, float sunLux, float dt)
 		{
 			r = Clip(r);
 			const float scale = 255.0f / logf(1.0f + FullLux);
+			const float up = std::min(1.0f, std::max(dt, 0.0f) / SightIn), down = std::min(1.0f, std::max(dt, 0.0f) / SightOut);
 			for (int y = r.y0; y <= r.y1; y++)
 			{
 				const size_t row = (size_t)y * w_;
@@ -408,7 +469,9 @@ namespace onilight
 				{
 					const size_t c = row + x;
 					float lux = seen_[c];
-					if (sight_[c]) lux += natural_[c] + (exposed ? exposed[c] * (sunLux / 255.0f) : 0.0f);
+					float& level = sightLevel_[c];
+					level = sight_[c] ? std::min(1.0f, level + up) : std::max(0.0f, level - down);
+					if (level > 0.0f) lux += level * (natural_[c] + (exposed ? exposed[c] * (sunLux / 255.0f) : 0.0f));
 					shown_[c] = lux <= 0.0f ? 0 : (uint8_t)std::min(255.0f, std::max(1.0f, logf(1.0f + lux) * scale + 0.5f));
 				}
 			}
@@ -520,6 +583,7 @@ namespace onilight
 		std::vector<ElementOptics> elements_;
 		std::vector<float> direct_, scattered_, through_, albedo_, seen_, natural_;
 		std::vector<uint8_t> sight_, shown_;
+		std::vector<float> sightLevel_;
 		std::vector<int32_t> sightCells_;
 
 		// Whether a duplicant sees through a cell (anything but an opaque solid), from the grid as it is now.

@@ -9,7 +9,7 @@
 #include "oni_light.h"
 
 // Changes on any edit of the structures and signatures: C# compares the number and leaves the game's light alone on a mismatch.
-#define ONI_LIGHT_ABI 5
+#define ONI_LIGHT_ABI 6
 
 #define ONI_STRINGIFY2(x) #x
 #define ONI_STRINGIFY(x) ONI_STRINGIFY2(x)
@@ -120,16 +120,16 @@ ONI_EXPORT int32_t oni_light_source_cells(int32_t id, int32_t* cells, int32_t ca
 	return engine.SourceCells(id, cells, capacity);
 }
 
-// What duplicants see now, from their eye cells, up to radius cells.
-ONI_EXPORT void oni_light_sight(const onilight::GridView* grid, const int32_t* eyes, int32_t count, float radius)
+// What duplicants see now, from their eyes (x, y pairs in cells, where the heads are), up to radius cells.
+ONI_EXPORT void oni_light_sight(const onilight::GridView* grid, const float* eyes, int32_t count, float radius)
 {
 	engine.Sight(*grid, eyes, count, radius);
 }
 
 // What the player sees in cells x0..x1, y0..y1, kept by cell (see Engine::UpdateShown).
-ONI_EXPORT void oni_light_update_shown(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const uint8_t* exposed, float sunLux)
+ONI_EXPORT void oni_light_update_shown(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const uint8_t* exposed, float sunLux, float dt)
 {
-	engine.UpdateShown({ x0, y0, x1, y1 }, exposed, sunLux);
+	engine.UpdateShown({ x0, y0, x1, y1 }, exposed, sunLux, dt);
 }
 
 // What the player sees by cell: 0 darkness .. 255 the game's own picture. Valid until the next oni_light_init.
