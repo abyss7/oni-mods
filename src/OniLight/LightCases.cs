@@ -26,12 +26,16 @@ namespace OniLight
 	/// </summary>
 	internal static class LightCases
 	{
-		private const int SiteWidth = 53, SiteHeight = 24;
+		private const int SiteWidth = 53, SiteHeight = 31;
 		private const float StartAfter = 8f, Warm = 293f;
 		// Rooms: interior 20 x 8 cells from (x, floor); walls 2 thick. A and B side by side below, C above A, the shine bug's
 		// cell above B.
 		private const int RoomA = 3, RoomB = 29, RoomC = 3, RoomWidth = 20, RoomHeight = 8, Floor = 2, FloorC = 14;
-		private const int Bug = 29, Gas = 34, GasWidth = 10;
+		private const int Bug = 29, Gas = 34, GasWidth = 10, Chamber = 25;
+		// The glow sticks: the stick's red at full light, half way through fading and nearly out; for comparison a
+		// yellow-green stick and the game's green shine bug.
+		private static readonly Color[] GlowColours = { GlowStick.Colour, GlowStick.Colour, GlowStick.Colour, GlowStick.YellowGreen, new Color(0.43f, 1f, 0.53f) };
+		private static readonly float[] GlowLeft = { 1800f, GlowStick.FadeFor * 0.6f, GlowStick.FadeFor * 0.3f, 1800f, 1800f };
 
 		private static int phase, originX, originY, frame;
 		private static float phaseTime;
@@ -121,13 +125,32 @@ namespace OniLight
 						}
 						if (Mod.Options.Blackout)
 						{
-							// A Duplicant in the dark pocket behind room B's wall, for what darkness does to them.
+							// A Duplicant in the dark pocket behind room B's wall, for what darkness does to them (no glow stick).
 							darkDupe = SpawnDupe(RoomB + RoomWidth + 2, Floor);
+							// A good digger, so that the work speed is not held at the game's floor of half speed.
+							darkDupe.GetAttributes().Add(new AttributeModifier(Db.Get().Attributes.Digging.Id, 10f, "LightCases"));
 							darkSpawned = now;
+							// Duplicants with glow sticks (by a New Hope given here) in the dark chamber: each colour full, and the
+							// first colour half faded.
+							for (int k = 0; k < GlowColours.Length; k++)
+							{
+								GameObject glowing = SpawnDupe(6 + 10 * k, Chamber);
+								GlowStick stick = glowing.GetComponent<GlowStick>();
+								if (stick != null)
+								{
+									stick.colour = GlowColours[k];
+									glowHope.Add((stick, GlowLeft[k]));
+								}
+								glowDupes.Add(glowing);
+							}
 						}
 						Next(now);
 						break;
 					case 5 when now >= phaseTime + 3f:
+						// The Duplicants of the scene have spawned by now: their New Hope.
+						foreach ((GlowStick stick, float left) in glowHope) stick.Hope(left);
+						Effect hope = Db.Get().effects.Get(GlowStick.NewHopeId);
+						Debug.Log($"{ModContext.Tag} LightCases: New Hope lasts {(hope != null ? hope.duration / 600f : -1f):F2} cycles");
 						FirstLook();
 						Next(now);
 						break;
@@ -172,6 +195,14 @@ namespace OniLight
 							if (pod != null && Mod.Options.Blackout) Blackout(pod);
 						}
 						else if (frame == 151)
+						{
+							CameraController.Instance.SnapTo(Grid.CellToPosCCC(Cell(26, Chamber + 2), Grid.SceneLayer.Background), 8f);
+						}
+						else if (frame == 200)
+						{
+							Picture("glow");
+						}
+						else if (frame == 201)
 						{
 							LightGrid.Report("after the scenes");
 							Debug.Log($"{ModContext.Tag} LightCases: {passed} passed, {failed} failed; closing the game");
@@ -306,6 +337,18 @@ namespace OniLight
 					bool chlorine = (x + y) % 2 == 0;
 					Set(x, y, chlorine ? SimHashes.ChlorineGas : SimHashes.Oxygen, chlorine ? 3f : 1.8f);
 					Back(x, y, SimHashes.Granite);
+				}
+			}
+			// Dark niches for the glow sticks (above the others), 5 wide and 4 high, one Duplicant in each.
+			for (int k = 0; k < GlowColours.Length; k++)
+			{
+				for (int x = 4 + 10 * k; x < 9 + 10 * k; x++)
+				{
+					for (int y = Chamber; y < Chamber + 4; y++)
+					{
+						Set(x, y, SimHashes.Oxygen, 1.8f);
+						Back(x, y, SimHashes.Granite);
+					}
 				}
 			}
 			// A closed cell for the shine bug.
@@ -568,6 +611,9 @@ namespace OniLight
 			return dupe;
 		}
 
+		private static readonly List<GameObject> glowDupes = new List<GameObject>();
+		private static readonly List<(GlowStick stick, float left)> glowHope = new List<(GlowStick, float)>();
+
 		private static void Teleport(GameObject dupe, int cell)
 		{
 			dupe.GetComponent<Navigator>()?.Stop();
@@ -577,6 +623,15 @@ namespace OniLight
 		/// <summary>What darkness does to a Duplicant: "In the Dark" after a minute awake in it; work speed by the light.</summary>
 		private static void DarkChecks()
 		{
+			// The glow sticks: lit, and the light at the chest of each as the stick gives it.
+			var glows = new List<string>();
+			foreach (GameObject g in glowDupes)
+			{
+				GlowStick stick = g != null ? g.GetComponent<GlowStick>() : null;
+				if (stick != null) glows.Add($"charge {stick.Charge():F2}, {DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(g)))} lux");
+			}
+			Expect("glow sticks light the dark", glowDupes.Count > 0 && glowDupes[0] != null && DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(glowDupes[0]))) >= 300,
+				string.Join("; ", glows));
 			int pocket = Cell(RoomB + RoomWidth + 2, Floor);
 			Effects effects = darkDupe.GetComponent<Effects>();
 			bool asleep = darkDupe.HasTag(GameTags.Asleep);
