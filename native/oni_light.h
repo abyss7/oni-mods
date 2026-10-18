@@ -314,7 +314,8 @@ namespace onilight
 		}
 
 		// Takes a source's light out of the light grid. With keep, its light is kept for an Add with another brightness
-		// (Free drops it); without, it is dropped.
+		// (Free drops it); without, it is dropped. Either way the source stays seen or not (a source traced again does not
+		// go dark to the player until its next check): only Free, when the id is given up, forgets it.
 		void Remove(const GridView& g, int id, bool keep)
 		{
 			if (id < 0 || (size_t)id >= sources_.size() || !sources_[id].active) return;
@@ -323,7 +324,7 @@ namespace onilight
 			s.active = false;
 			counters_.removes++;
 			if (keep) s.kept = true;
-			else Free(id);
+			else Drop(s);
 		}
 
 		bool Wet(int id) const { return id >= 0 && (size_t)id < sources_.size() && sources_[id].active && sources_[id].wet; }
@@ -420,12 +421,18 @@ namespace onilight
 		float NaturalLux(int cell) const { return natural_[cell]; }
 		bool InSight(int cell) const { return sight_[cell] != 0; }
 
+		// The id is given up (the next source under it is new to the player too).
 		void Free(int id)
 		{
 			if (id < 0 || (size_t)id >= sources_.size() || sources_[id].active) return;
 			Source& s = sources_[id];
-			s.kept = false;
+			Drop(s);
 			s.seen = false;
+		}
+
+		static void Drop(Source& s)
+		{
+			s.kept = false;
 			std::vector<Entry>().swap(s.direct);
 			std::vector<Entry>().swap(s.scattered);
 		}

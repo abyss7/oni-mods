@@ -207,7 +207,16 @@ namespace
 		const float lux = f.engine.SeenLux(lampCell), expected = std::min(255.0f, logf(1.0f + lux) * 255.0f / logf(1.0f + FullLux) + 0.5f);
 		const uint8_t* shown = f.engine.Shown();
 		Expect(shown[lampCell] == (uint8_t)expected && shown[f.grid.Cell(5, 20)] == 0, "the player's view: by the logarithm of the light, 0 in the dark", shown[lampCell], expected);
-		f.engine.SetSeen(0, false);
+		// Traced again (as the mod does for lights by liquid and gas, and every light now and then): still seen.
+		f.engine.Remove(g, 0, false);
+		f.engine.Add(g, 0, Lamp(20, 20));
+		Expect(Near(f.engine.SeenLux(lampCell), f.engine.Direct(lampCell), 1e-3), "the player's view: a colony light traced again stays seen", f.engine.SeenLux(lampCell), f.engine.Direct(lampCell));
+		f.engine.Add(g, 0, Lamp(20, 20));
+		Expect(Near(f.engine.SeenLux(lampCell), f.engine.Direct(lampCell), 1e-3), "the player's view: a colony light replaced stays seen", f.engine.SeenLux(lampCell), f.engine.Direct(lampCell));
+		f.engine.Remove(g, 0, true);
+		f.engine.Free(0);
+		f.engine.Add(g, 0, Lamp(20, 20));
+		Expect(f.engine.SeenLux(lampCell) == 0.0f, "the player's view: a new light under a freed id is not seen yet");
 		f.engine.Remove(g, 0, false);
 		f.engine.Remove(g, 1, false);
 		double left = 0;

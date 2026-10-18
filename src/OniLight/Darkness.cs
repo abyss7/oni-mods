@@ -16,7 +16,7 @@ namespace OniLight
 	///
 	/// Which light the player may see:
 	/// - of a source the colony made (lamps, the printing pod, rocket engines): while a Duplicant can walk into its light,
-	///   checked for each such source about once a second;
+	///   checked for each such source about once a second; a light a Duplicant carries (the glow stick) always;
 	/// - of the sun and of everything else (creatures, plants, glowing rocks, things found in the world): only in the cells
 	///   a Duplicant sees at that moment (straight lines from their heads, up to SightRadius cells, through anything but
 	///   opaque solids), redone several times a second.
@@ -191,7 +191,7 @@ namespace OniLight
 				int next = seenQueue.Dequeue();
 				if (LightGrid.TryOwner(next, out LightGridManager.LightGridEmitter emitter) && !LightGrid.IsNatural(emitter))
 				{
-					LightNative.SetSeen(next, Reachable(next, emitter) ? 1 : 0);
+					LightNative.SetSeen(next, LightGrid.IsCarried(emitter) || Reachable(next, emitter) ? 1 : 0);
 					SeenChecks++;
 				}
 			}

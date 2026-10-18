@@ -123,6 +123,7 @@ namespace OniLight
 			waiting.Clear();
 			toRefresh.Clear();
 			naturalOf.Clear();
+			carried.Clear();
 			wet.Clear();
 			wetQueue.Clear();
 			wetQuota = sweepQuota = 0f;
@@ -177,6 +178,11 @@ namespace OniLight
 		// Whether a light is not made by the colony: the player sees its light only where a Duplicant sees (Darkness).
 		private static readonly Dictionary<LightGridManager.LightGridEmitter, bool> naturalOf = new Dictionary<LightGridManager.LightGridEmitter, bool>();
 
+		// Lights a Duplicant carries (the glow stick): the colony's, and always seen, the Duplicant being in their light.
+		private static readonly HashSet<LightGridManager.LightGridEmitter> carried = new HashSet<LightGridManager.LightGridEmitter>();
+
+		internal static bool IsCarried(LightGridManager.LightGridEmitter emitter) => !IsNatural(emitter) && carried.Contains(emitter);
+
 		internal static bool IsNatural(LightGridManager.LightGridEmitter emitter)
 		{
 			if (naturalOf.TryGetValue(emitter, out bool natural))
@@ -196,16 +202,21 @@ namespace OniLight
 			if (owner != null)
 			{
 				naturalOf[emitter] = natural;
+				if (owner.GetComponent<MinionIdentity>() != null) carried.Add(emitter);
 			}
 			return natural;
 		}
 
-		/// <summary>A building the colony builds (from the build menu, a rocket module) or the printing pod.</summary>
+		/// <summary>A building the colony builds (from the build menu, a rocket module), the printing pod or a Duplicant's light.</summary>
 		private static bool MadeByColony(Light2D light)
 		{
 			if (light == null)
 			{
 				return false;
+			}
+			if (light.GetComponent<MinionIdentity>() != null)
+			{
+				return true; // a light the Duplicant carries
 			}
 			BuildingComplete building = light.GetComponent<BuildingComplete>();
 			if (building == null || building.Def == null)
@@ -498,6 +509,7 @@ namespace OniLight
 					wet.Remove(id);
 					owners.Remove(id);
 					naturalOf.Remove(emitter);
+					carried.Remove(emitter);
 					ids.Remove(emitter);
 					freeIds.Push(id);
 					Frees++;
