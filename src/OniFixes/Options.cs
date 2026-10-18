@@ -44,6 +44,10 @@ namespace OniFixes
 		[JsonProperty]
 		public bool OuthouseMeter { get; set; } = true;
 
+		[Option(Key + "HIDDENPRIORITIES.NAME", Key + "HIDDENPRIORITIES.TOOLTIP", Key + "CATEGORY.FIXES")]
+		[JsonProperty]
+		public bool HiddenPriorities { get; set; } = true;
+
 		[Option(Key + "DEMANDDRIVENFETCH.NAME", Key + "DEMANDDRIVENFETCH.TOOLTIP", Key + "CATEGORY.DUPLICANTS")]
 		[JsonProperty]
 		public bool DemandDrivenFetch { get; set; } = true;

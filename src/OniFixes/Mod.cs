@@ -37,6 +37,7 @@ namespace OniFixes
 				(nameof(ConveyorArrivals), Options.ConveyorArrivals, ConveyorArrivals.Apply),
 				(nameof(QuickPills), Options.QuickPills, QuickPills.Apply),
 				(nameof(OuthouseMeter), Options.OuthouseMeter, OuthouseMeter.Apply),
+				(nameof(HiddenPriorities), Options.HiddenPriorities, HiddenPriorities.Apply),
 			};
 			List<string> applied = new List<string>();
 			foreach ((string name, bool enabled, Action<Harmony> apply) in fixes)

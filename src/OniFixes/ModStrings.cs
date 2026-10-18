@@ -41,6 +41,12 @@ namespace OniFixes
 				public static LocString TOOLTIP = "The fill meter of an outhouse empties as soon as it is cleaned, instead of staying full until the next visit.";
 			}
 
+			public static class HIDDENPRIORITIES
+			{
+				public static LocString NAME = "No priorities for buried objects";
+				public static LocString TOOLTIP = "The priority tool leaves a buried object (a geyser still in the rock) alone until a part of it is dug free: its errand no longer gives away what it is.";
+			}
+
 			public static class REDRAWONANIMSTART
 			{
 				public static LocString NAME = "Redraw animations when they start";
