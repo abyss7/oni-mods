@@ -241,6 +241,22 @@ namespace
 		Expect(f.engine.Scattered(f.grid.Cell(4, 8)) == 0.0f && f.engine.Scattered(f.grid.Cell(0, 3)) == 0.0f, "a ceiling light: nothing inside the rock behind the faces");
 	}
 
+	// A tunnel 2 high with a light at a Duplicant's head: straight lines reach the ceiling only right above the light (the
+	// lines to farther cells of it cut through the ceiling itself); the light reflected in the tunnel lights the rest of it.
+	void Tunnel()
+	{
+		Grid tunnel(24, 7, Granite);
+		for (int y = 2; y <= 3; y++)
+			for (int x = 1; x <= 20; x++) tunnel.Set(x, y, Oxygen);
+		for (int x = 8; x <= 14; x++) tunnel.Set(x, 2, Water), tunnel.mass[tunnel.Cell(x, 2)] = 150.0f;
+		Fixture f(tunnel);
+		GridView g = f.View();
+		f.engine.Add(g, 0, Lamp(6, 3, 600, 4));
+		int lit = 0;
+		for (int x = 1; x <= 20; x++) lit += f.engine.Direct(f.grid.Cell(x, 4)) + f.engine.Scattered(f.grid.Cell(x, 4)) >= 1.0f;
+		Expect(f.engine.Direct(f.grid.Cell(9, 4)) == 0.0f && lit >= 12, "a tunnel: its ceiling lit by the light in it, over a puddle too", lit, 12);
+	}
+
 	// A ceiling light lights the half below it; a beam is even on both sides of its axis.
 	void Shapes()
 	{
@@ -409,6 +425,7 @@ int main()
 	PlayerView();
 	Shapes();
 	CeilingRoom();
+	Tunnel();
 	Reflection();
 	Variants();
 	Rescale();
