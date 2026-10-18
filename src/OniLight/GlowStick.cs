@@ -42,6 +42,11 @@ namespace OniLight
 
 		private Light2D light;
 		private float shown = -1f;
+		private KBatchedAnimController anim;
+		private static readonly HashedString Chest = new HashedString("snapTo_chest");
+		private static readonly Vector2 DefaultOffset = new Vector2(0f, 1f); // the chest's cell
+		/// <summary>Where the light is drawn from, against the Duplicant's position (for the self-check).</summary>
+		internal Vector2 Offset => light != null ? light.Offset : DefaultOffset;
 
 		internal static void Apply(Harmony harmony)
 		{
@@ -90,6 +95,7 @@ namespace OniLight
 		{
 			base.OnSpawn();
 			effects = GetComponent<Effects>();
+			anim = GetComponent<KBatchedAnimController>();
 		}
 
 		/// <summary>Gives New Hope with this much of it left (the self-check's Duplicants).</summary>
@@ -106,11 +112,36 @@ namespace OniLight
 			light.Lux = (int)Lux;
 			light.Range = Range;
 			light.shape = LightShape.Circle;
-			light.Offset = new Vector2(0f, 1f); // the chest's cell
+			light.Offset = DefaultOffset;
 			light.Color = colour ?? Colour;
 			light.overlayColour = light.Color;
 			light.drawOverlay = true; // the game's rays of a light
 			light.autoRespondToOperational = false;
+		}
+
+		/// <summary>
+		/// The light is drawn at the chest as the animation has it, not at the Duplicant's cell: getting on or off a ladder,
+		/// jumping or climbing, the body moves in the animation while the position changes only at its end. The light's cell
+		/// (for the light grid) follows the same point, unless that is in a solid cell.
+		/// </summary>
+		private void FollowBody()
+		{
+			Vector2 offset = DefaultOffset;
+			if (anim != null)
+			{
+				Matrix4x4 chest = anim.GetSymbolTransform(Chest, out bool visible);
+				if (visible)
+				{
+					Vector3 at = chest.GetColumn(3), position = transform.GetPosition();
+					offset = new Vector2(at.x - position.x, at.y - position.y);
+				}
+			}
+			int cell = Grid.PosToCell(transform.GetPosition() + (Vector3)offset);
+			if (!Grid.IsValidCell(cell) || Grid.Solid[cell])
+			{
+				offset = DefaultOffset;
+			}
+			light.Offset = offset;
 		}
 
 		private void Update()
@@ -144,6 +175,7 @@ namespace OniLight
 			{
 				return;
 			}
+			FollowBody();
 			// The game's picture of the light dims with it: its coloured glow and its rays.
 			light.IntensityAnimation = charge;
 			Color rays = colour ?? Colour;

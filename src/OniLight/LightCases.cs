@@ -728,9 +728,12 @@ namespace OniLight
 			foreach (GameObject g in glowDupes)
 			{
 				GlowStick stick = g != null ? g.GetComponent<GlowStick>() : null;
-				if (stick != null) glows.Add($"charge {stick.Charge():F2}, {DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(g)))} lux");
+				if (stick != null) glows.Add($"charge {stick.Charge():F2}, {DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(g)))} lux, drawn at {stick.Offset.x:F2},{stick.Offset.y:F2}");
 			}
-			Expect("glow sticks light the dark", glowDupes.Count > 0 && glowDupes[0] != null && DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(glowDupes[0]))) >= 300,
+			// Drawn at the chest as the animation has it: standing, about a cell above the feet.
+			GlowStick first = glowDupes.Count > 0 && glowDupes[0] != null ? glowDupes[0].GetComponent<GlowStick>() : null;
+			Expect("glow sticks light the dark", first != null && DarkWork.Lux(Grid.CellAbove(Grid.PosToCell(glowDupes[0]))) >= 300
+				&& Mathf.Abs(first.Offset.x) < 0.5f && first.Offset.y > 0.4f && first.Offset.y < 1.6f,
 				string.Join("; ", glows));
 			PoolFoundCheck();
 			int pocket = Cell(RoomB + RoomWidth + 2, Floor);
