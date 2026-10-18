@@ -196,7 +196,8 @@ namespace OniLight
 						}
 						else if (frame == 151)
 						{
-							CameraController.Instance.SnapTo(Grid.CellToPosCCC(Cell(26, Chamber + 2), Grid.SceneLayer.Background), 8f);
+							// All five niches (x 4..48) in the picture.
+							CameraController.Instance.SnapTo(Grid.CellToPosCCC(Cell(26, Chamber + 2), Grid.SceneLayer.Background), 13f);
 						}
 						else if (frame == 200)
 						{

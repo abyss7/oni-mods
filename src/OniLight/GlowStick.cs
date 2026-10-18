@@ -22,12 +22,12 @@ namespace OniLight
 		internal const string NewHopeId = "AnewHope";
 
 		/// <summary>
-		/// The light's colour: the red of the chemical light sticks dropped in caves (glowing near 620 nm). The rays are the
-		/// game's own grey, as for every light in it.
+		/// The light's colour: the red of the chemical light sticks dropped in caves (glowing near 620 nm). The game's
+		/// lights have grey rays and only a faint coloured glow, so the stick's rays take its colour: else the colour
+		/// hardly shows.
 		/// </summary>
 		internal static Color Colour = new Color(1f, 0.2f, 0.12f);
 		internal static readonly Color YellowGreen = new Color(0.62f, 1f, 0.28f);
-		private static readonly Color Rays = new Color(0.56f, 0.56f, 0.56f, 1f);
 
 		/// <summary>The stick has gone out (for good).</summary>
 		[Serialize] public bool gone;
@@ -89,7 +89,7 @@ namespace OniLight
 			light.shape = LightShape.Circle;
 			light.Offset = new Vector2(0f, 1f); // the chest's cell
 			light.Color = colour ?? Colour;
-			light.overlayColour = Rays;
+			light.overlayColour = light.Color;
 			light.drawOverlay = true; // the game's rays of a light
 			light.autoRespondToOperational = false;
 		}
@@ -117,7 +117,8 @@ namespace OniLight
 			}
 			// The game's picture of the light dims with it: its coloured glow and its rays.
 			light.IntensityAnimation = charge;
-			light.overlayColour = new Color(Rays.r * charge, Rays.g * charge, Rays.b * charge, charge);
+			Color rays = colour ?? Colour;
+			light.overlayColour = new Color(rays.r * charge, rays.g * charge, rays.b * charge, charge);
 			// The light follows the charge in steps of 1% (each step a cheap rescale of its light, not a new trace).
 			if (Mathf.Abs(charge - shown) >= 0.01f)
 			{
