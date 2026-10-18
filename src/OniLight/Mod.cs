@@ -31,6 +31,7 @@ namespace OniLight
 				return;
 			}
 			LightGrid.Apply(harmony);
+			LightOverlay.Apply(harmony);
 			if (Options.Blackout)
 			{
 				Darkness.Apply(harmony);
@@ -39,6 +40,7 @@ namespace OniLight
 				if (Options.PoolGlow) PoolGlow.Apply(harmony);
 			}
 			LightCases.Apply(harmony);
+			LightProbe.Apply(harmony);
 			Debug.Log($"[OniLight] {assembly.GetName().Version}, {LightNative.Info}; blackout {(Options.Blackout ? "on" : "off")}");
 		}
 	}

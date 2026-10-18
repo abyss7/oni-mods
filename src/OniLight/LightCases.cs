@@ -643,6 +643,43 @@ namespace OniLight
 			bool dark = Darkness.Dark(wall);
 			AccessTools.Method(typeof(DigTool), "OnDragTool").Invoke(DigTool.Instance, new object[] { wall, 0 });
 			Expect("no dig order in the dark", dark && Grid.Objects[wall, (int)ObjectLayer.DigPlacer] == null, $"the wall dark {dark}, an order there {Grid.Objects[wall, (int)ObjectLayer.DigPlacer] != null}");
+			// Any tool: the game's own drag (DragTool.AddDragPoint asks Grid.IsVisible) gives no priority to the lamp of the
+			// dark room; the game calls it unexplored.
+			Prioritizable lamp = floorLampA != null ? floorLampA.GetComponent<Prioritizable>() : null;
+			if (lamp != null && PrioritizeTool.Instance != null && ToolMenu.Instance?.PriorityScreen != null)
+			{
+				PrioritySetting before = lamp.GetMasterPriority(), tool = ToolMenu.Instance.PriorityScreen.GetLastSelectedPriority();
+				var probe = new PrioritySetting(PriorityScreen.PriorityClass.basic, before.priority_value == 9 ? 1 : 9);
+				ToolMenu.Instance.PriorityScreen.SetScreenPriority(probe);
+				AccessTools.Method(typeof(DragTool), "AddDragPoint").Invoke(PrioritizeTool.Instance, new object[] { floorLampA.transform.GetPosition() });
+				bool kept = lamp.GetMasterPriority().priority_value == before.priority_value;
+				lamp.SetMasterPriority(before);
+				// The same drag over a lit building of the colony does set its priority (the check means something).
+				Prioritizable lit = null;
+				foreach (BuildingComplete b in Components.BuildingCompletes.Items)
+				{
+					Prioritizable p = b != null ? b.GetComponent<Prioritizable>() : null;
+					if (p != null && p.showIcon && p.IsPrioritizable() && b.GetMyWorldId() == ClusterManager.Instance.activeWorldId && !Darkness.Dark(Grid.PosToCell(b))
+						&& Grid.IsVisible(Grid.PosToCell(b)) && PrioritizeTool.Instance.IsActiveLayer(PrioritizeTool.Instance.GetFilterLayerFromGameObject(b.gameObject)))
+					{
+						lit = p;
+						break;
+					}
+				}
+				bool litSet = false;
+				if (lit != null)
+				{
+					PrioritySetting litBefore = lit.GetMasterPriority();
+					var litProbe = new PrioritySetting(PriorityScreen.PriorityClass.basic, litBefore.priority_value == 9 ? 1 : 9);
+					ToolMenu.Instance.PriorityScreen.SetScreenPriority(litProbe);
+					AccessTools.Method(typeof(DragTool), "AddDragPoint").Invoke(PrioritizeTool.Instance, new object[] { lit.transform.GetPosition() });
+					litSet = lit.GetMasterPriority().priority_value == litProbe.priority_value;
+					lit.SetMasterPriority(litBefore);
+				}
+				ToolMenu.Instance.PriorityScreen.SetScreenPriority(tool);
+				Expect("no order of any kind in the dark (the priority tool)", kept && !Grid.IsVisible(Grid.PosToCell(floorLampA)) && litSet,
+					$"the dark lamp's priority kept {kept}, its cell explored to the game {Grid.IsVisible(Grid.PosToCell(floorLampA))}; a lit building ({lit?.GetProperName() ?? "none"}) set {litSet}");
+			}
 			Debug.Log($"{ModContext.Tag} LightCases: darkness: sight updates {Darkness.SightUpdates}, colony sources checked {Darkness.SeenChecks}, views {Darkness.Views}");
 		}
 

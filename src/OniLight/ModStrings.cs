@@ -14,7 +14,7 @@ namespace OniLight
 			public static class BLACKOUT
 			{
 				public static LocString NAME = "Blackout";
-				public static LocString TOOLTIP = "You see only what is lit: where there is no light, nothing shows, and dim light shows dimly. The light of the colony's own lamps shows while a Duplicant can walk into it; the light of the sun, creatures, plants and glowing rocks shows only where a Duplicant sees it at that moment. Dig and build orders need some light. Duplicants work slower in dim light and much slower in the dark, move slower in the dark, cannot do research, art, medicine, cooking or machine work in total darkness, and grow stressed if awake in it. The first Duplicants carry a glow stick while their New Hope lasts.";
+				public static LocString TOOLTIP = "You see only what is lit: below 1 lux nothing shows (as if never explored: no tooltips, no orders of any kind), and dim light shows dimly. The light of the colony's own lamps shows while a Duplicant can walk into it; the light of the sun, creatures, plants and glowing rocks shows only where a Duplicant sees it at that moment. Dig and build orders need some light. Duplicants work slower in dim light and much slower in the dark, move slower in the dark, cannot do research, art, medicine, cooking or machine work in total darkness, and grow stressed if awake in it. The first Duplicants carry a glow stick while their New Hope lasts.";
 			}
 
 			public static class POOLGLOW
@@ -31,6 +31,21 @@ namespace OniLight
 				public static LocString NAME = "In the Dark";
 				public static LocString TOOLTIP = "This Duplicant has been awake in total darkness for over a minute and is growing stressed";
 			}
+		}
+
+		/// <summary>The legend of the light overlay: what each of the game's light ranges does.</summary>
+		public static class OVERLAY
+		{
+			public static LocString PITCHBLACK = "No light at all: Duplicants work without the bonus for working in light";
+			public static LocString PITCHBLACK_BLACKOUT = "No light at all: Duplicants work 50% slower, cannot do research, art, medicine, cooking or machine work, move 20% slower and grow stressed if awake here for long";
+			public static LocString VERYDIM = "Duplicants get the +15% bonus for working in light";
+			public static LocString VERYDIM_BLACKOUT = "Duplicants work 20% slower. Below 1 lux you see nothing here, from 1 lux only dimly";
+			public static LocString DIM = "Duplicants get the +15% bonus for working in light";
+			public static LocString DIM_BLACKOUT = "Duplicants work at their normal speed";
+			public static LocString WELLLIT = "Duplicants get the +15% bonus for working in light";
+			public static LocString BRIGHT = "Duplicants get the +15% bonus for working in light; strong lamps and the sun of open space";
+			public static LocString BRILLIANT = "Strong sunlight: from 72,000 lux Duplicants out in it get sunburnt (the red shimmer)";
+			public static LocString BLINDING = "Blinding sunlight: Duplicants out in it get sunburnt";
 		}
 
 		public static class STATUSITEMS

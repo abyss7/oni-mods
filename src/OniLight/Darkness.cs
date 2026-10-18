@@ -10,7 +10,8 @@ namespace OniLight
 {
 	/// <summary>
 	/// The Blackout mode, what the player sees: only what is lit. For each cell the mod keeps what the player sees in it
-	/// (0 is darkness, 255 the game's own picture; the brightness grows with the logarithm of the light up to 500 lux), and
+	/// (0 is darkness, below 1 lux; from a barely seen 4 at 1 lux the brightness grows with the logarithm of the light
+	/// up to the game's own picture, 255, at 500 lux), and
 	/// the game's fog of war shows no more than that: the fog darkens terrain, buildings and creatures alike, with the same
 	/// gradient the game uses for the edge of the explored. (OniFixes, filling the fog natively, takes the values through
 	/// the application domain data "OniMods.BlackoutShown.1".)
@@ -24,10 +25,10 @@ namespace OniLight
 	///   see shows over 0.3 s, what they stop seeing fades over 0.7 s.
 	/// The light itself (for plants, work and everything else in the game) is not changed by this: only the player's view.
 	///
-	/// In a cell the player sees nothing in: the tooltip under the cursor is empty, nothing there can be selected, names,
-	/// bars and status icons of things there are hidden, pop-ups are not shown; in the overlays no priorities show there and
-	/// nothing there is highlighted or brought forward (an overlay sees such a cell as not explored); and dig and build
-	/// orders can be placed only in cells with some light (once placed, they stay when the light goes).
+	/// A cell the player sees nothing in is to the player as a cell not explored yet: the game takes it so for its tooltips
+	/// ("Unknown"), selection, tools (no order of any kind can be given there; orders given while it was lit stay), health
+	/// bars, status icons, pop-ups and overlays; besides, names are hidden there, no priorities show, nothing there is
+	/// highlighted in an overlay, and nothing there can be selected.
 	/// </summary>
 	internal static unsafe class Darkness
 	{
@@ -50,8 +51,10 @@ namespace OniLight
 			harmony.Patch(AccessTools.Method(typeof(LightGridManager), nameof(LightGridManager.Shutdown)), prefix: new HarmonyMethod(typeof(Darkness), nameof(Shutdown)));
 			harmony.Patch(AccessTools.Method(typeof(PropertyTextures), "UpdateFogOfWar"), prefix: new HarmonyMethod(typeof(Darkness), nameof(FogOfWar)));
 			AppDomain.CurrentDomain.SetData(SharedKey, (Func<IntPtr>)(() => (IntPtr)shown));
-			// What the player gets to know about dark cells.
-			harmony.Patch(AccessTools.Method(typeof(SelectToolHoverTextCard), nameof(SelectToolHoverTextCard.UpdateHoverElements)), prefix: new HarmonyMethod(typeof(Darkness), nameof(NoHoverInTheDark)));
+			// What the player gets to know about dark cells: as of cells not explored yet. The game asks Grid.IsVisible for
+			// its tooltips (it says "Unknown"), all its tools, selecting a cell, health bars, status icons, pop-ups, the
+			// overlays' highlights and more; patched at loading, before anything that calls it is compiled.
+			harmony.Patch(AccessTools.Method(typeof(Grid), nameof(Grid.IsVisible)), postfix: new HarmonyMethod(typeof(Darkness), nameof(NotVisibleInTheDark)));
 			harmony.Patch(AccessTools.Method(typeof(SelectTool), nameof(SelectTool.Select)), prefix: new HarmonyMethod(typeof(Darkness), nameof(NoSelectInTheDark)));
 			harmony.Patch(AccessTools.Method(typeof(NameDisplayScreen), "Culling"), postfix: new HarmonyMethod(typeof(Darkness), nameof(HideNamesInTheDark)));
 			harmony.Patch(AccessTools.Method(typeof(StatusItemRenderer.Entry), nameof(StatusItemRenderer.Entry.Render)), prefix: new HarmonyMethod(typeof(Darkness), nameof(NoStatusIconInTheDark)));
@@ -60,9 +63,6 @@ namespace OniLight
 				prefix: new HarmonyMethod(typeof(Darkness), nameof(NoPopUpInTheDark)));
 			// Overlays: priorities, objects highlighted or brought forward, their icons, only where the player sees something.
 			harmony.Patch(AccessTools.Method(typeof(PrioritizableRenderer), "renderEveryTickVisitHelper"), prefix: new HarmonyMethod(typeof(Darkness), nameof(NoPriorityInTheDark)));
-			harmony.Patch(AccessTools.Method(typeof(OverlayScreen), "LateUpdate"), prefix: new HarmonyMethod(typeof(Darkness), nameof(OverlayBegins)),
-				finalizer: new HarmonyMethod(typeof(Darkness), nameof(OverlayEnds)));
-			harmony.Patch(AccessTools.Method(typeof(Grid), nameof(Grid.IsVisible)), postfix: new HarmonyMethod(typeof(Darkness), nameof(NotVisibleInTheDark)));
 			try
 			{
 				// Generic: one instantiation for a class patches the code all classes share.
@@ -78,21 +78,13 @@ namespace OniLight
 			harmony.Patch(AccessTools.Method(typeof(BuildTool), "TryBuild"), prefix: new HarmonyMethod(typeof(Darkness), nameof(OrderOnlyInLight)));
 		}
 
+		/// <summary>What the player sees in a cell, 0-255 (0: nothing, or not computed yet).</summary>
+		internal static byte ShownAt(int cell) => shown != null && Grid.IsValidCell(cell) ? shown[cell] : (byte)0;
+
 		/// <summary>Whether the player sees nothing in a cell.</summary>
 		internal static bool Dark(int cell) => shown != null && Grid.IsValidCell(cell) && shown[cell] == 0;
 
 		private static bool Dark(Vector3 position) => Dark(Grid.PosToCell(position));
-
-		private static bool NoHoverInTheDark()
-		{
-			int cell = Grid.PosToCell(Camera.main.ScreenToWorldPoint(KInputManager.GetMousePos()));
-			if (!Grid.IsValidCell(cell) || !Dark(cell) || HoverTextScreen.Instance == null)
-			{
-				return true;
-			}
-			HoverTextScreen.Instance.BeginDrawing().EndDrawing();
-			return false;
-		}
 
 		private static bool NoSelectInTheDark(KSelectable new_selected)
 		{
@@ -144,20 +136,10 @@ namespace OniLight
 			return true;
 		}
 
-		// While an overlay updates, a cell the player sees nothing in counts as not visible (as if not explored yet).
-		private static int overlayScope;
-
-		private static void OverlayBegins() => overlayScope++;
-
-		private static Exception OverlayEnds(Exception __exception)
-		{
-			overlayScope--;
-			return __exception;
-		}
-
+		/// <summary>A cell the player sees nothing in counts as not explored yet.</summary>
 		private static void NotVisibleInTheDark(int cell, ref bool __result)
 		{
-			if (__result && overlayScope > 0 && Dark(cell))
+			if (__result && Dark(cell))
 			{
 				__result = false;
 			}
@@ -296,7 +278,7 @@ namespace OniLight
 		}
 
 		/// <summary>Whether a Duplicant of the source's world can walk into one of the cells it lights.</summary>
-		private static bool Reachable(int id, LightGridManager.LightGridEmitter emitter)
+		internal static bool Reachable(int id, LightGridManager.LightGridEmitter emitter)
 		{
 			int origin = emitter.state.origin;
 			if (!Grid.IsValidCell(origin))

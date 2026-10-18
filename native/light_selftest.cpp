@@ -204,7 +204,7 @@ namespace
 		f.engine.Sight(g, eye2, 1, 32.0f);
 		Expect(f.engine.InSight(bugCell) && f.engine.NaturalLux(bugCell) > 0.0f, "the player's view: a natural light shows where a duplicant sees");
 		f.engine.UpdateShown({ 0, 0, 60, 40 }, nullptr, 0.0f, 1.0f);
-		const float lux = f.engine.SeenLux(lampCell), expected = std::min(255.0f, logf(1.0f + lux) * 255.0f / logf(1.0f + FullLux) + 0.5f);
+		const float lux = f.engine.SeenLux(lampCell), expected = lux < SeeFrom ? 0.0f : std::min(255.0f, ShownAtSeeFrom + logf(lux / SeeFrom) * (255.0f - ShownAtSeeFrom) / logf(FullLux / SeeFrom) + 0.5f);
 		const uint8_t* shown = f.engine.Shown();
 		Expect(shown[lampCell] == (uint8_t)expected && shown[f.grid.Cell(5, 20)] == 0, "the player's view: by the logarithm of the light, 0 in the dark", shown[lampCell], expected);
 		// Traced again (as the mod does for lights by liquid and gas, and every light now and then): still seen.

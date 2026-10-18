@@ -48,10 +48,13 @@ namespace onilight
 	constexpr float Escape = 0.15f;           // share of the scattered light that leaves the plane per cell (back wall, viewer)
 	constexpr float WindowThrough = 0.9f;     // a transparent tile
 	constexpr float BuildingReflectance = 0.35f; // a solid building cell whose element is not solid (a closed door)
-	constexpr float MinLux = 0.5f;            // less direct or reflected light than this is not kept
+	constexpr float MinLux = 0.5f;            // less direct or reflected light than this is not kept (not above SeeFrom)
 	constexpr float MinScattered = 0.05f;     // less scattered light than this is not kept
 	constexpr float MaxRange = 64.0f;         // a larger radius (another mod's light) is taken as this
 	constexpr float FullLux = 500.0f;         // the player sees a cell at the game's own brightness from this light
+	// Below SeeFrom lux the player sees nothing (as if not explored); at SeeFrom a cell is barely seen, but not dark: as
+	// 0.1 lux was shown before there was a threshold (log(1.1) of log(501) of 255).
+	constexpr float SeeFrom = 1.0f, ShownAtSeeFrom = 4.0f;
 	constexpr float SightIn = 0.3f, SightOut = 0.7f; // s: what duplicants start or stop seeing shows or fades for the player
 
 	enum State : uint8_t { Vacuum = 0, Gas = 1, Liquid = 2, Solid = 3 };
@@ -451,8 +454,9 @@ namespace onilight
 			return m;
 		}
 
-		// What the player sees in each cell of a rectangle, kept by cell (Shown): 0 is darkness, 255 the game's own picture;
-		// the brightness grows with the logarithm of the light up to full at FullLux. The light seen: of the colony's
+		// What the player sees in each cell of a rectangle, kept by cell (Shown): 0 is darkness (below SeeFrom lux), 255 the
+		// game's own picture; from ShownAtSeeFrom at SeeFrom the brightness grows with the logarithm of the light up to full
+		// at FullLux. The light seen: of the colony's
 		// sources a duplicant can walk into, and, in the cells duplicants see, of the others and of the sun (exposed
 		// 0..255 times sunLux).
 		// What duplicants see comes and goes smoothly for the player: a cell they start to see shows over SightIn seconds,
@@ -460,7 +464,7 @@ namespace onilight
 		void UpdateShown(Rect r, const uint8_t* exposed, float sunLux, float dt)
 		{
 			r = Clip(r);
-			const float scale = 255.0f / logf(1.0f + FullLux);
+			const float scale = (255.0f - ShownAtSeeFrom) / logf(FullLux / SeeFrom);
 			const float up = std::min(1.0f, std::max(dt, 0.0f) / SightIn), down = std::min(1.0f, std::max(dt, 0.0f) / SightOut);
 			for (int y = r.y0; y <= r.y1; y++)
 			{
@@ -472,7 +476,7 @@ namespace onilight
 					float& level = sightLevel_[c];
 					level = sight_[c] ? std::min(1.0f, level + up) : std::max(0.0f, level - down);
 					if (level > 0.0f) lux += level * (natural_[c] + (exposed ? exposed[c] * (sunLux / 255.0f) : 0.0f));
-					shown_[c] = lux <= 0.0f ? 0 : (uint8_t)std::min(255.0f, std::max(1.0f, logf(1.0f + lux) * scale + 0.5f));
+					shown_[c] = lux < SeeFrom ? 0 : (uint8_t)std::min(255.0f, ShownAtSeeFrom + logf(lux / SeeFrom) * scale + 0.5f);
 				}
 			}
 		}
