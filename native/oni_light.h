@@ -52,7 +52,6 @@ namespace onilight
 	constexpr float MinScattered = 0.05f;     // less scattered light than this is not kept
 	constexpr float MaxRange = 64.0f;         // a larger radius (another mod's light) is taken as this
 	constexpr float FullLux = 500.0f;         // the player sees a cell at the game's own brightness from this light
-	constexpr float GlareFrom = 20000.0f, GlareFull = 100000.0f, GlareAlpha = 0.85f; // and it whitens from this to that
 
 	enum State : uint8_t { Vacuum = 0, Gas = 1, Liquid = 2, Solid = 3 };
 	enum Shape : int32_t { Circle = 0, Cone = 1, Quad = 2 };
@@ -263,6 +262,7 @@ namespace onilight
 			natural_.assign(n, 0.0f);
 			sight_.assign(n, 0);
 			sightCells_.clear();
+			shown_.assign(n, 0);
 			through_.assign(n, 1.0f);
 			albedo_.assign(n, 0.0f);
 			sources_.clear();
@@ -392,39 +392,29 @@ namespace onilight
 			}
 		}
 
-		// The player's view of a rectangle of cells, as pixels (RGBA, row by row, pageWidth pixels a row) of a layer drawn
-		// over the world: black with the darkness as alpha (0 lux: black; the brightness grows with the logarithm of the
-		// light up to full at FullLux), white with the glare as alpha from GlareFrom to GlareFull lux. The light seen: of the
-		// colony's sources a duplicant can walk into, and, in the cells duplicants see, of the others and of the sun
-		// (exposed 0..255 times sunLux).
-		void PlayerView(const GridView& g, Rect r, const uint8_t* exposed, float sunLux, uint8_t* out, int pageWidth) const
+		// What the player sees in each cell of a rectangle, kept by cell (Shown): 0 is darkness, 255 the game's own picture;
+		// the brightness grows with the logarithm of the light up to full at FullLux. The light seen: of the colony's
+		// sources a duplicant can walk into, and, in the cells duplicants see, of the others and of the sun (exposed
+		// 0..255 times sunLux).
+		void UpdateShown(Rect r, const uint8_t* exposed, float sunLux)
 		{
 			r = Clip(r);
-			const float logFull = logf(1.0f + FullLux);
+			const float scale = 255.0f / logf(1.0f + FullLux);
 			for (int y = r.y0; y <= r.y1; y++)
 			{
-				uint8_t* px = out + (size_t)(y - r.y0) * pageWidth * 4;
 				const size_t row = (size_t)y * w_;
-				for (int x = r.x0; x <= r.x1; x++, px += 4)
+				for (int x = r.x0; x <= r.x1; x++)
 				{
 					const size_t c = row + x;
 					float lux = seen_[c];
 					if (sight_[c]) lux += natural_[c] + (exposed ? exposed[c] * (sunLux / 255.0f) : 0.0f);
-					if (lux >= GlareFrom)
-					{
-						const float t = std::min(1.0f, (lux - GlareFrom) / (GlareFull - GlareFrom));
-						px[0] = px[1] = px[2] = 255;
-						px[3] = (uint8_t)(GlareAlpha * 255.0f * t);
-					}
-					else
-					{
-						const float b = lux <= 0.0f ? 0.0f : std::min(1.0f, logf(1.0f + lux) / logFull);
-						px[0] = px[1] = px[2] = 0;
-						px[3] = (uint8_t)(255.0f * (1.0f - b) + 0.5f);
-					}
+					shown_[c] = lux <= 0.0f ? 0 : (uint8_t)std::min(255.0f, std::max(1.0f, logf(1.0f + lux) * scale + 0.5f));
 				}
 			}
 		}
+
+		// What the player sees by cell (see UpdateShown); valid until the next Init.
+		const uint8_t* Shown() const { return shown_.data(); }
 
 		float SeenLux(int cell) const { return seen_[cell]; }
 		float NaturalLux(int cell) const { return natural_[cell]; }
@@ -522,7 +512,7 @@ namespace onilight
 		int w_ = 0, h_ = 0;
 		std::vector<ElementOptics> elements_;
 		std::vector<float> direct_, scattered_, through_, albedo_, seen_, natural_;
-		std::vector<uint8_t> sight_;
+		std::vector<uint8_t> sight_, shown_;
 		std::vector<int32_t> sightCells_;
 
 		// Whether a duplicant sees through a cell (anything but an opaque solid), from the grid as it is now.

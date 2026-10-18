@@ -46,18 +46,32 @@ static void FillFogOfWar(const OniGridView g, const OniTextureTarget t, int32_t 
 		const uint8_t* world = g.worldIdx + y * g.width;
 		const uint8_t* visible = g.visible + y * g.width;
 		int32_t x = t.x0;
+		// With the Blackout mode a cell shows no more than the player sees in it (the cell of the reference row for a cell of
+		// another world, as for visibility).
+		const uint8_t* shown = g.shown ? g.shown + y * g.width : nullptr;
+		const uint8_t* shownClamp = g.shown && clampValid ? g.shown + clampRow * g.width : nullptr;
 		// 16 cells at a time: the "cell of own world" mask chooses between its own visibility and the visibility of the reference row.
 		for (; x + 15 <= t.x1; x += 16, out += 16)
 		{
 			const __m128i own = _mm_and_si128(_mm_cmpeq_epi8(_mm_loadu_si128((const __m128i*)(world + x)), activeV), anyActiveV);
-			const __m128i other = clampValid ? _mm_loadu_si128((const __m128i*)(clamp + x)) : _mm_setzero_si128();
-			const __m128i mine = _mm_loadu_si128((const __m128i*)(visible + x));
+			__m128i other = clampValid ? _mm_loadu_si128((const __m128i*)(clamp + x)) : _mm_setzero_si128();
+			__m128i mine = _mm_loadu_si128((const __m128i*)(visible + x));
+			if (shown)
+			{
+				mine = _mm_min_epu8(mine, _mm_loadu_si128((const __m128i*)(shown + x)));
+				if (shownClamp) other = _mm_min_epu8(other, _mm_loadu_si128((const __m128i*)(shownClamp + x)));
+			}
 			_mm_storeu_si128((__m128i*)out, _mm_or_si128(_mm_and_si128(own, mine), _mm_andnot_si128(own, other))); // SSE2: no blendv
 		}
 		for (; x <= t.x1; x++)
 		{
-			const uint8_t other = clampValid ? clamp[x] : 0;
-			*out++ = (anyActive && world[x] == active) ? visible[x] : other;
+			uint8_t other = clampValid ? clamp[x] : 0, mine = visible[x];
+			if (shown)
+			{
+				mine = mine < shown[x] ? mine : shown[x];
+				if (shownClamp) other = other < shownClamp[x] ? other : shownClamp[x];
+			}
+			*out++ = (anyActive && world[x] == active) ? mine : other;
 		}
 	}
 }

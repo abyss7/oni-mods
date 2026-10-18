@@ -1,4 +1,5 @@
 // Test of the module on plain Linux, without the game: the scalar and vector versions must give the same result.
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -9,7 +10,7 @@
 #include "oni_textures.cpp"
 
 // Texture filling is compared against a direct transcription of the game logic: per cell, with a byte index, as in TextureRegion.SetBytes.
-static bool TestTextures()
+static bool TestTextures(bool withShown)
 {
 	const int width = 331, height = 257, cells = width * height, elements = 40;
 	std::vector<uint16_t> elementIdx(cells), backwall(cells);
@@ -27,8 +28,11 @@ static bool TestTextures()
 		visible[i] = (uint8_t)(rand() % 256);
 		buildMasks[i] = (uint8_t)(rand() % 256);
 	}
+	// With the Blackout mode (OniLight) a fog cell shows no more than the player sees in it.
+	std::vector<uint8_t> shown(cells);
+	for (int i = 0; i < cells; i++) shown[i] = (uint8_t)(rand() % 256);
 	OniGridView g = { width, height, 1, elements, elementIdx.data(), mass.data(), properties.data(), backwall.data(),
-		worldIdx.data(), visible.data(), buildMasks.data(), damage.data(), state.data() };
+		worldIdx.data(), visible.data(), buildMasks.data(), damage.data(), state.data(), withShown ? shown.data() : nullptr };
 
 	const int x0 = 17, y0 = 9, x1 = 300, y1 = 250, pageWidth = 512, pageHeight = 256, clampRow = 200;
 	bool ok = true;
@@ -49,7 +53,8 @@ static bool TestTextures()
 				if (kinds[k] == ONI_TEX_FOG_OF_WAR)
 				{
 					const int other = x + clampRow * width;
-					out[0] = active ? visible[cell] : (other < cells ? visible[other] : 0);
+					auto seen = [&](int c) { return withShown ? std::min(visible[c], shown[c]) : visible[c]; };
+					out[0] = active ? seen(cell) : (other < cells ? seen(other) : 0);
 				}
 				else if (kinds[k] == ONI_TEX_SOLID_DIG_AMOUNT)
 				{
@@ -164,12 +169,14 @@ int main()
 	// The texture kernels with each variant: both must match the game's logic byte for byte.
 	oni_native_limit_variant(0);
 	printf("textures, SSE2:\n");
-	ok = TestTextures() && ok;
+	ok = TestTextures(false) && ok;
+	printf("textures, SSE2, with what the player sees (Blackout):\n");
+	ok = TestTextures(true) && ok;
 	if (OniHasAvx())
 	{
 		oni_native_limit_variant(1);
 		printf("textures, AVX:\n");
-		ok = TestTextures() && ok;
+		ok = TestTextures(false) && ok;
 	}
 	printf("%s\n", ok ? "SELFTEST OK" : "SELFTEST FAILED");
 	return ok ? 0 : 1;

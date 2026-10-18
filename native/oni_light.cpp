@@ -9,7 +9,7 @@
 #include "oni_light.h"
 
 // Changes on any edit of the structures and signatures: C# compares the number and leaves the game's light alone on a mismatch.
-#define ONI_LIGHT_ABI 4
+#define ONI_LIGHT_ABI 5
 
 #define ONI_STRINGIFY2(x) #x
 #define ONI_STRINGIFY(x) ONI_STRINGIFY2(x)
@@ -126,11 +126,16 @@ ONI_EXPORT void oni_light_sight(const onilight::GridView* grid, const int32_t* e
 	engine.Sight(*grid, eyes, count, radius);
 }
 
-// The player's view of cells x0..x1, y0..y1 as RGBA pixels of the layer drawn over the world (see Engine::PlayerView).
-ONI_EXPORT void oni_light_player_view(const onilight::GridView* grid, int32_t x0, int32_t y0, int32_t x1, int32_t y1, const uint8_t* exposed,
-	float sunLux, uint8_t* out, int32_t pageWidth)
+// What the player sees in cells x0..x1, y0..y1, kept by cell (see Engine::UpdateShown).
+ONI_EXPORT void oni_light_update_shown(int32_t x0, int32_t y0, int32_t x1, int32_t y1, const uint8_t* exposed, float sunLux)
 {
-	engine.PlayerView(*grid, { x0, y0, x1, y1 }, exposed, sunLux, out, pageWidth);
+	engine.UpdateShown({ x0, y0, x1, y1 }, exposed, sunLux);
+}
+
+// What the player sees by cell: 0 darkness .. 255 the game's own picture. Valid until the next oni_light_init.
+ONI_EXPORT const uint8_t* oni_light_shown()
+{
+	return engine.Shown();
 }
 
 // out: light the player sees of the colony's sources, light of the others, whether duplicants see the cell.

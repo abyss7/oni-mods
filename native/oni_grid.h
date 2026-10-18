@@ -16,7 +16,7 @@
 #endif
 
 // Changes on any edit of the structures and signatures: C# compares the number and does not use the kernels on a mismatch.
-#define ONI_NATIVE_ABI 5
+#define ONI_NATIVE_ABI 6
 
 // Layout must match the GridView struct in src/OniFixes/NativeLib.cs.
 struct OniGridView
@@ -34,6 +34,7 @@ struct OniGridView
 	const uint8_t* buildMasks;          // C#: building flags, bit 1 = solid cell
 	const float* damage;                // C#: cell damage, 0..1
 	const uint8_t* elementState;        // C#: by element index, 0 vacuum, 1 gas, 2 liquid, 3 solid
+	const uint8_t* shown;               // OniLight (Blackout): what the player sees by cell, 0..255; null without it
 };
 
 enum OniElementState : uint8_t
