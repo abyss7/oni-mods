@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Klei.AI;
 using HarmonyLib;
 using OniCommon;
 using UnityEngine;
@@ -69,7 +70,7 @@ namespace OniLight
 
 		private static void Frame()
 		{
-			if (phase > 9 || Game.Instance == null || GameClock.Instance == null || ClusterManager.Instance == null || !LightGrid.Ready)
+			if (phase > 10 || Game.Instance == null || GameClock.Instance == null || ClusterManager.Instance == null || !LightGrid.Ready)
 			{
 				return;
 			}
@@ -86,7 +87,7 @@ namespace OniLight
 						if (!FindSite())
 						{
 							Debug.LogWarning($"{ModContext.Tag} LightCases: FAILED: no free {SiteWidth} x {SiteHeight} place in the active world");
-							phase = 10;
+							phase = 11;
 							return;
 						}
 						for (int y = 0; y < SiteHeight; y++)
@@ -118,6 +119,12 @@ namespace OniLight
 						{
 							SwitchOn(lamp, true);
 						}
+						if (Mod.Options.Blackout)
+						{
+							// A Duplicant in the dark pocket behind room B's wall, for what darkness does to them.
+							darkDupe = SpawnDupe(RoomB + RoomWidth + 2, Floor);
+							darkSpawned = now;
+						}
 						Next(now);
 						break;
 					case 5 when now >= phaseTime + 3f:
@@ -131,9 +138,14 @@ namespace OniLight
 					case 7 when now >= phaseTime + 3f:
 						LastLook();
 						Next(now);
+						break;
+					// Until the Duplicant has been awake in the dark for over a minute (a new one may sleep first), at most 4 minutes.
+					case 8 when darkDupe == null || DarkWork.DarkFor(darkDupe.GetComponent<MinionIdentity>()) >= 63f || now >= darkSpawned + 240f:
+						if (darkDupe != null) DarkChecks();
+						Next(now);
 						frame = 0;
 						break;
-					case 8:
+					case 9:
 						if (++frame == 30)
 						{
 							Picture("normal");
@@ -163,7 +175,7 @@ namespace OniLight
 						{
 							LightGrid.Report("after the scenes");
 							Debug.Log($"{ModContext.Tag} LightCases: {passed} passed, {failed} failed; closing the game");
-							phase = 10;
+							phase = 11;
 							App.Quit();
 						}
 						break;
@@ -171,7 +183,7 @@ namespace OniLight
 			}
 			catch (Exception e)
 			{
-				phase = 10;
+				phase = 11;
 				Debug.LogWarning($"{ModContext.Tag} LightCases: FAILED: stopped after an error: {e}");
 			}
 		}
@@ -532,6 +544,83 @@ namespace OniLight
 			AccessTools.Method(typeof(DigTool), "OnDragTool").Invoke(DigTool.Instance, new object[] { wall, 0 });
 			Expect("no dig order in the dark", dark && Grid.Objects[wall, (int)ObjectLayer.DigPlacer] == null, $"the wall dark {dark}, an order there {Grid.Objects[wall, (int)ObjectLayer.DigPlacer] != null}");
 			Debug.Log($"{ModContext.Tag} LightCases: darkness: sight updates {Darkness.SightUpdates}, colony sources checked {Darkness.SeenChecks}, views {Darkness.Views}");
+		}
+
+		private static GameObject darkDupe;
+		private static float darkSpawned;
+
+		private static GameObject SpawnDupe(int x, int y)
+		{
+			GameObject prefab = Assets.GetPrefab(MinionConfig.ID);
+			MinionStartingStats stats;
+			do
+			{
+				stats = new MinionStartingStats(GameTags.Minions.Models.Standard, is_starter_minion: false);
+			}
+			while (stats.Traits.Exists(trait => trait.Id == "Narcolepsy"));
+			GameObject dupe = Util.KInstantiate(prefab);
+			dupe.name = prefab.name;
+			Immigration.Instance.ApplyDefaultPersonalPriorities(dupe);
+			dupe.transform.SetLocalPosition(Grid.CellToPosCBC(Cell(x, y), Grid.SceneLayer.Move));
+			dupe.SetActive(true);
+			stats.Apply(dupe);
+			dupe.GetMyWorld().SetDupeVisited();
+			return dupe;
+		}
+
+		private static void Teleport(GameObject dupe, int cell)
+		{
+			dupe.GetComponent<Navigator>()?.Stop();
+			dupe.transform.SetPosition(Grid.CellToPosCBC(cell, Grid.SceneLayer.Move));
+		}
+
+		/// <summary>What darkness does to a Duplicant: "In the Dark" after a minute awake in it; work speed by the light.</summary>
+		private static void DarkChecks()
+		{
+			int pocket = Cell(RoomB + RoomWidth + 2, Floor);
+			Effects effects = darkDupe.GetComponent<Effects>();
+			bool asleep = darkDupe.HasTag(GameTags.Asleep);
+			Expect("in the dark for a minute: In the Dark", asleep || (effects != null && effects.HasEffect(DarkWork.InTheDarkId)),
+				$"light at the Duplicant {DarkWork.Lux(Grid.PosToCell(darkDupe))} lux, asleep {asleep}, the effect {effects?.HasEffect(DarkWork.InTheDarkId)}, " +
+				$"in the dark for {DarkWork.DarkFor(darkDupe.GetComponent<MinionIdentity>()):F0} s, checks {DarkWork.Checks}");
+			// Work speed: a dig of the wall by the pocket, from cells of different light.
+			GameObject dig = DigTool.PlaceDig(Cell(RoomB + RoomWidth + 1, Floor));
+			Workable workable = dig != null ? dig.GetComponent<Workable>() : null;
+			WorkerBase worker = darkDupe.GetComponent<WorkerBase>();
+			if (workable == null || worker == null)
+			{
+				Expect("work speed by the light", false, "no dig to measure with");
+				return;
+			}
+			int Find(float from, float to)
+			{
+				for (int y = Floor; y < Floor + RoomHeight; y++)
+					for (int x = RoomA; x < RoomA + RoomWidth; x++)
+					{
+						int c = Cell(x, y);
+						int lux = DarkWork.Lux(c);
+						if (lux >= from && lux < to && Grid.Element[c].IsGas) return c;
+					}
+				return -1;
+			}
+			int dim = Find(20f, DarkWork.Dim - 20f), usual = Find(DarkWork.Dim + 20f, DarkWork.Bright - 20f), bright = Find(DarkWork.Bright + 50f, 1e9f);
+			var at = new List<string>();
+			float Speed(int cell)
+			{
+				if (cell < 0) return float.NaN;
+				Teleport(darkDupe, cell);
+				float m = workable.GetEfficiencyMultiplier(worker);
+				at.Add($"{DarkWork.Lux(cell)} lux {m:F2}");
+				return m;
+			}
+			float mDark = Speed(pocket), mDim = Speed(dim), mUsual = Speed(usual), mBright = Speed(bright);
+			Teleport(darkDupe, pocket);
+			// The game keeps work at least at half speed: in the dark, -50% down to that.
+			float floor = workable.minimumAttributeMultiplier;
+			bool ok = Mathf.Abs(mBright - mUsual - 0.15f) < 0.01f && Mathf.Abs(Mathf.Max(mUsual - 0.2f, floor) - mDim) < 0.01f
+				&& Mathf.Abs(Mathf.Max(mUsual - 0.5f, floor) - mDark) < 0.01f;
+			Expect("work speed by the light", ok, string.Join(", ", at) + $"; moves slowed in the dark {DarkWork.Slowed}, dark errands stopped {DarkWork.Stopped}");
+			Util.KDestroyGameObject(dig);
 		}
 
 		private static string Where(int cell)

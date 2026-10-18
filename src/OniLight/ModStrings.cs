@@ -14,8 +14,37 @@ namespace OniLight
 			public static class BLACKOUT
 			{
 				public static LocString NAME = "Blackout";
-				public static LocString TOOLTIP = "You see only what is lit: where there is no light, nothing shows, and dim light shows dimly; very bright light dazzles. The light of the colony's own lamps shows while a Duplicant can walk into it; the light of the sun, creatures, plants and glowing rocks shows only where a Duplicant sees it at that moment.";
+				public static LocString TOOLTIP = "You see only what is lit: where there is no light, nothing shows, and dim light shows dimly. The light of the colony's own lamps shows while a Duplicant can walk into it; the light of the sun, creatures, plants and glowing rocks shows only where a Duplicant sees it at that moment. Dig and build orders need some light. Duplicants work slower in dim light and much slower in the dark, move slower in the dark, cannot do research, art, medicine, cooking or machine work in total darkness, and grow stressed if awake in it.";
 			}
+		}
+
+		public static class EFFECTS
+		{
+			public static class INTHEDARK
+			{
+				public static LocString NAME = "In the Dark";
+				public static LocString TOOLTIP = "This Duplicant has been awake in total darkness for over a minute and is growing stressed";
+			}
+		}
+
+		public static class STATUSITEMS
+		{
+			public static class DARKWORKSPACE
+			{
+				public static LocString NAME = "Dark Workspace";
+				public static LocString TOOLTIP = "This Duplicant works in total darkness: half as fast";
+			}
+
+			public static class DIMWORKSPACE
+			{
+				public static LocString NAME = "Dim Workspace";
+				public static LocString TOOLTIP = "This Duplicant works in dim light (below 500 lux): 20% slower";
+			}
+		}
+
+		public static class CHORES
+		{
+			public static LocString TOODARK = "Too dark to do this";
 		}
 	}
 }
