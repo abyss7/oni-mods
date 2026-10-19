@@ -13,7 +13,8 @@ namespace OniLight
 	///   500 lux, +15% from 1000 lux (the game gives +15% for any light). Status items say which.
 	/// - In total darkness no research, art, medicine, cooking or machine work: such errands are not taken where it is
 	///   dark, and stop when the light goes out.
-	/// - Moving in total darkness is 20% slower (walking, climbing, swimming; not the transit tubes).
+	/// - Moving in total darkness is 20% slower (walking, climbing, swimming; not the transit tubes, nor single moves such as
+	///   a jump onto a ledge, which last as long as their animation).
 	/// - "In the Dark": awake in total darkness for over a minute, a Duplicant grows stressed (+10% a cycle).
 	/// </summary>
 	internal static class DarkWork
@@ -173,8 +174,8 @@ namespace OniLight
 			{
 				return;
 			}
+			// The body moves slower, the steps keep their pace (a single move, timed by its animation, is not slowed).
 			transition.speed *= DarkMove;
-			transition.animSpeed *= DarkMove;
 			Slowed++;
 		}
 
