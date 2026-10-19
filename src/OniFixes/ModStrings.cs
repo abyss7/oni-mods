@@ -41,6 +41,12 @@ namespace OniFixes
 				public static LocString TOOLTIP = "The fill meter of an outhouse empties as soon as it is cleaned, instead of staying full until the next visit.";
 			}
 
+			public static class SMOOTHSLOWMOVES
+			{
+				public static LocString NAME = "Smooth slowed moves";
+				public static LocString TOOLTIP = "A slowed Duplicant (low Athletics, deep water) no longer moves in slow motion: walking and climbing keep the pace of their steps while the body moves slower, and single moves such as a jump onto a ledge or getting on a ladder play at their normal pace (they are not slowed).";
+			}
+
 			public static class HIDDENPRIORITIES
 			{
 				public static LocString NAME = "No priorities for buried objects";
