@@ -128,6 +128,8 @@ namespace OniGasMix
 		}
 
 		private static Func<int, object, bool> previousPlantCell;
+		/// <summary>Plant cells whose gas counted by its pressure alone (below the share of a present gas).</summary>
+		internal static long PlantsByPressure;
 
 		private static bool PlantCell(int cell, object data)
 		{
@@ -142,7 +144,10 @@ namespace OniGasMix
 				// Not a gas: the previous handler (the game's, or another mod's).
 				return previousPlantCell(cell, data);
 			}
-			// Gas: the part of the mixture made of the plant's gases suits it; its mass is the plant's pressure.
+			// Gas: the part of the mixture made of the plant's gases suits it; its mass is the plant's pressure. Those gases count
+			// as the plant's atmosphere when one is the main gas, makes up the share any game logic takes as present, or is
+			// there with at least the plant's own low-pressure threshold (for the Oxyfern 25 g of Carbon Dioxide, about 1 kPa:
+			// where Duplicants start to find the air stuffy), so a plant can share a room's air with Duplicants.
 			float safeMass = 0f, bestMass = 0f;
 			Element best = null;
 			GasMixture.Gases gases = GasMixture.Of(cell);
@@ -159,7 +164,9 @@ namespace OniGasMix
 					best = gas;
 				}
 			}
-			bool safe = best != null && (plant.IsSafeElement(main) || GasMixture.Has(cell, best.idx));
+			bool safe = best != null && (plant.IsSafeElement(main) || GasMixture.Has(cell, best.idx)
+				|| (plant.pressureWarning_Low > 0f && safeMass >= plant.pressureWarning_Low));
+			if (safe && !plant.IsSafeElement(main) && !GasMixture.Has(cell, best.idx)) PlantsByPressure++;
 			if (safe != plant.IsSafeElement(main))
 			{
 				Differs("plants");
