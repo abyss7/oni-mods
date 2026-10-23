@@ -14,6 +14,12 @@ namespace OniDup
 				public static LocString NAME = "Buried Duplicants suffocate";
 				public static LocString TOOLTIP = "A Duplicant buried over the head cannot breathe: they hold their breath, then suffocate unless someone digs them out in time. An Oxygen Mask or a suit still gives them air. Off: they breathe from the free cells next to their head, as in the base game.";
 			}
+
+			public static class WHEEL
+			{
+				public static LocString NAME = "Manual Generator by Athletics";
+				public static LocString TOOLTIP = "The Manual Generator gives 150 W plus 12.5 W per point of the runner's Athletics (200 W for a usual starting Duplicant, 400 W at Athletics 20, never below 50 W) instead of 400 W for anyone. Running trains Athletics only, not Machinery, and costs extra Calories: about four times the power given (+115 kcal for a whole cycle at 200 W). Off: as in the base game.";
+			}
 		}
 
 		public static class EFFECTS

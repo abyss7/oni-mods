@@ -21,5 +21,10 @@ namespace OniDup
 		[Option(Key + "BURIEDBREATH.NAME", Key + "BURIEDBREATH.TOOLTIP")]
 		[JsonProperty]
 		public bool BuriedFaceSuffocates { get; set; }
+
+		/// <summary>The Manual Generator by the runner's Athletics, training Athletics only, at a cost in Calories (DupWheel).</summary>
+		[Option(Key + "WHEEL.NAME", Key + "WHEEL.TOOLTIP")]
+		[JsonProperty]
+		public bool WheelByAthletics { get; set; } = true;
 	}
 }

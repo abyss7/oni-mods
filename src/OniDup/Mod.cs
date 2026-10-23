@@ -29,9 +29,10 @@ namespace OniDup
 			DupWork.Apply(harmony);
 			DupBuild.Apply(harmony);
 			DupEntombed.Apply(harmony);
+			DupWheel.Apply(harmony);
 			DupCases.Apply(harmony);
 			DupTileCases.Apply(harmony);
-			Debug.Log($"[OniDup] {assembly.GetName().Version}, air: {DupAir.Mode}, work: {DupWork.Mode}, tiles: {DupBuild.Mode}, entombed: {DupEntombed.Mode}, buried face suffocates: {Options.BuriedFaceSuffocates}");
+			Debug.Log($"[OniDup] {assembly.GetName().Version}, air: {DupAir.Mode}, work: {DupWork.Mode}, tiles: {DupBuild.Mode}, entombed: {DupEntombed.Mode}, buried face suffocates: {Options.BuriedFaceSuffocates}, wheel by Athletics: {Options.WheelByAthletics}");
 		}
 	}
 }
