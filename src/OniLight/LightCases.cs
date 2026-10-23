@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using Klei.AI;
 using HarmonyLib;
@@ -224,8 +225,24 @@ namespace OniLight
 							Expect("no priority shows in the dark (the priorities overlay)", lamp != null && Darkness.Dark(Grid.PosToCell(floorLampA)) && !shownPriorities.Contains(lamp),
 								$"the lamp dark {floorLampA != null && Darkness.Dark(Grid.PosToCell(floorLampA))}, priorities shown {shownPriorities.Count}, the lamp's among them {lamp != null && shownPriorities.Contains(lamp)}");
 							Picture("priorities");
+							OverlayScreen.Instance.ToggleOverlay(OverlayModes.Power.ID, allowSound: false);
 						}
-						else if (frame == 171)
+						else if (frame == 175 && Mod.Options.Blackout)
+						{
+							// The power overlay: the dark lamp's port icon (where the wire goes in) is not drawn.
+							EntityCellVisualizer visualizer = floorLampA != null ? floorLampA.GetComponent<EntityCellVisualizer>() : null;
+							int drawn = 0, ports = 0;
+							if (visualizer != null)
+							{
+								foreach (var port in visualizer.ports)
+								{
+									ports++;
+									if (port.visualizer != null && port.visualizer.activeInHierarchy) drawn++;
+								}
+							}
+							Expect("no port icons in the dark (the power overlay)", visualizer != null && ports > 0 && drawn == 0, $"the dark lamp's ports {ports}, icons drawn {drawn}");
+						}
+						else if (frame == 176)
 						{
 							OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
 							// All five niches (x 4..48) in the picture.
@@ -255,8 +272,27 @@ namespace OniLight
 						}
 						else if (frame == 301)
 						{
-							BringFinder();
-							Next(now);
+							// Every overlay for a few frames, around the pump room (crops, buildings, pipes): none may throw.
+							sweepModes = new List<HashedString>(((System.Collections.IDictionary)AccessTools.Field(typeof(OverlayScreen), "modeInfos").GetValue(OverlayScreen.Instance)).Keys.Cast<HashedString>());
+							sweepErrors = 0;
+							Application.logMessageReceived += CountErrors;
+						}
+						else if (frame > 301 && sweepModes != null)
+						{
+							int index = (frame - 302) / 4;
+							if (index < sweepModes.Count)
+							{
+								if ((frame - 302) % 4 == 0) OverlayScreen.Instance.ToggleOverlay(sweepModes[index], allowSound: false);
+							}
+							else
+							{
+								OverlayScreen.Instance.ToggleOverlay(OverlayModes.None.ID, allowSound: false);
+								Application.logMessageReceived -= CountErrors;
+								Expect("every overlay works with the darkness", sweepErrors == 0, $"{sweepModes.Count} overlays, errors {sweepErrors}{(lastSweepError != null ? ": " + lastSweepError : "")}");
+								sweepModes = null;
+								BringFinder();
+								Next(now);
+							}
 						}
 						break;
 					// Until the glow in the water has faded out after it was found (at most two minutes).
@@ -756,6 +792,19 @@ namespace OniLight
 			else
 			{
 				finder = null;
+			}
+		}
+
+		private static List<HashedString> sweepModes;
+		private static int sweepErrors;
+		private static string lastSweepError;
+
+		private static void CountErrors(string message, string stack, LogType type)
+		{
+			if (type == LogType.Exception || type == LogType.Error)
+			{
+				sweepErrors++;
+				lastSweepError = message.Length > 160 ? message.Substring(0, 160) : message;
 			}
 		}
 

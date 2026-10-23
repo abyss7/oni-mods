@@ -28,7 +28,7 @@ namespace OniLight
 	/// A cell the player sees nothing in is to the player as a cell not explored yet: the game takes it so for its tooltips
 	/// ("Unknown"), selection, tools (no order of any kind can be given there; orders given while it was lit stay), health
 	/// bars, status icons, pop-ups and overlays; besides, names are hidden there, no priorities show, nothing there is
-	/// highlighted in an overlay, and nothing there can be selected.
+	/// highlighted in an overlay (by the game's check), and nothing there can be selected.
 	/// </summary>
 	internal static unsafe class Darkness
 	{
@@ -63,16 +63,11 @@ namespace OniLight
 				prefix: new HarmonyMethod(typeof(Darkness), nameof(NoPopUpInTheDark)));
 			// Overlays: priorities, objects highlighted or brought forward, their icons, only where the player sees something.
 			harmony.Patch(AccessTools.Method(typeof(PrioritizableRenderer), "renderEveryTickVisitHelper"), prefix: new HarmonyMethod(typeof(Darkness), nameof(NoPriorityInTheDark)));
-			try
-			{
-				// Generic: one instantiation for a class patches the code all classes share.
-				MethodInfo add = AccessTools.Method(typeof(OverlayModes.Mode), "AddTargetIfVisible").MakeGenericMethod(typeof(SaveLoadRoot));
-				harmony.Patch(add, prefix: new HarmonyMethod(typeof(Darkness), nameof(NoOverlayTargetInTheDark)));
-			}
-			catch (Exception e)
-			{
-				Debug.LogWarning($"{ModContext.Tag} darkness: overlay targets are not limited to the light: {e.Message}");
-			}
+			// Not patched: OverlayModes.Mode.AddTargetIfVisible<T> (it reads the explored state itself). A patch of a generic method
+			// replaces the code all reference types share with one typed for a single T, and the other overlays then crash with
+			// an invalid cast (the crop overlay did). Objects brought forward in an overlay are drawn under the fog anyway.
+			// The icons of a building's ports in the overlays (pipes, wires, heat sources and sinks): not in the dark.
+			harmony.Patch(AccessTools.Method(typeof(EntityCellVisualizer), nameof(EntityCellVisualizer.DrawIcons)), prefix: new HarmonyMethod(typeof(Darkness), nameof(NoPortIconsInTheDark)));
 			// Orders only where there is some light.
 			harmony.Patch(AccessTools.Method(typeof(DigTool), "OnDragTool"), prefix: new HarmonyMethod(typeof(Darkness), nameof(OrderOnlyInLight)));
 			harmony.Patch(AccessTools.Method(typeof(BuildTool), "TryBuild"), prefix: new HarmonyMethod(typeof(Darkness), nameof(OrderOnlyInLight)));
@@ -145,23 +140,66 @@ namespace OniLight
 			}
 		}
 
-		/// <summary>An object goes into an overlay's highlighted layer only if the player sees some cell of it.</summary>
-		private static bool NoOverlayTargetInTheDark(object[] __args)
+		/// <summary>Whether the player sees nothing in any cell of an object.</summary>
+		internal static bool Hidden(GameObject go)
 		{
-			if (shown == null || !(__args[0] is IUniformGridObject target))
+			if (shown == null || go == null)
 			{
-				return true;
+				return false;
 			}
-			Vector2 min = target.PosMin(), max = target.PosMax();
-			for (int y = (int)min.y; y <= max.y; y++)
+			int origin = Grid.PosToCell(go);
+			OccupyArea area = go.GetComponent<OccupyArea>();
+			if (area == null || area.OccupiedCellsOffsets == null || area.OccupiedCellsOffsets.Length == 0)
 			{
-				for (int x = (int)min.x; x <= max.x; x++)
+				return Dark(origin);
+			}
+			foreach (CellOffset offset in area.OccupiedCellsOffsets)
+			{
+				int cell = Grid.OffsetCell(origin, offset);
+				if (Grid.IsValidCell(cell) && !Dark(cell)) return false;
+			}
+			return true;
+		}
+
+		// Which port icons were hidden for the dark when last drawn: drawn again when that changes (the game draws them
+		// only when the overlay changes).
+		private static readonly Dictionary<EntityCellVisualizer, bool> portsHidden = new Dictionary<EntityCellVisualizer, bool>();
+		private static float lastPortCheck;
+
+		private static void NoPortIconsInTheDark(EntityCellVisualizer __instance, ref HashedString mode)
+		{
+			if (Game.Instance != null && __instance == Game.Instance.previewVisualizer)
+			{
+				return;
+			}
+			bool hidden = Hidden(__instance.gameObject);
+			portsHidden[__instance] = hidden;
+			if (hidden)
+			{
+				mode = OverlayModes.None.ID;
+			}
+		}
+
+		private static void RefreshPortIcons()
+		{
+			if (OverlayScreen.Instance == null || Time.unscaledTime < lastPortCheck + 0.5f)
+			{
+				return;
+			}
+			lastPortCheck = Time.unscaledTime;
+			HashedString mode = OverlayScreen.Instance.GetMode();
+			if (mode == OverlayModes.None.ID)
+			{
+				portsHidden.Clear();
+				return;
+			}
+			foreach (EntityCellVisualizer visualizer in Components.EntityCellVisualizers.Items)
+			{
+				if (visualizer != null && portsHidden.TryGetValue(visualizer, out bool was) && was != Hidden(visualizer.gameObject))
 				{
-					int cell = Grid.XYToCell(x, y);
-					if (Grid.IsValidCell(cell) && !Dark(cell)) return true;
+					visualizer.DrawIcons(mode);
 				}
 			}
-			return false;
 		}
 
 		private static bool OrderOnlyInLight(int cell)
@@ -191,6 +229,7 @@ namespace OniLight
 				}
 				UpdateSeen();
 				UpdateShown();
+				RefreshPortIcons();
 			}
 			catch (Exception e)
 			{
