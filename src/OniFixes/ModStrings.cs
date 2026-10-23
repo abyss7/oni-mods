@@ -41,6 +41,12 @@ namespace OniFixes
 				public static LocString TOOLTIP = "The fill meter of an outhouse empties as soon as it is cleaned, instead of staying full until the next visit.";
 			}
 
+			public static class DOORCLIMBERS
+			{
+				public static LocString NAME = "Critters stay on doors when loading";
+				public static LocString TOOLTIP = "Pips and other wall crawlers holding on to a closed door no longer fall when a save is loaded: the game forgot the doors when it made the walking grid on loading.";
+			}
+
 			public static class SMOOTHSLOWMOVES
 			{
 				public static LocString NAME = "Smooth slowed moves";

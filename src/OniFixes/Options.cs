@@ -52,6 +52,10 @@ namespace OniFixes
 		[JsonProperty]
 		public bool SmoothSlowMoves { get; set; } = true;
 
+		[Option(Key + "DOORCLIMBERS.NAME", Key + "DOORCLIMBERS.TOOLTIP", Key + "CATEGORY.FIXES")]
+		[JsonProperty]
+		public bool DoorClimbers { get; set; } = true;
+
 		[Option(Key + "DEMANDDRIVENFETCH.NAME", Key + "DEMANDDRIVENFETCH.TOOLTIP", Key + "CATEGORY.DUPLICANTS")]
 		[JsonProperty]
 		public bool DemandDrivenFetch { get; set; } = true;
