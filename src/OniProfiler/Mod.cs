@@ -24,6 +24,7 @@ namespace OniProfiler
 			MethodTimer.PatchAll(harmony, Path.Combine(path, "profile_methods.txt"));
 			LoopTimer.Install();
 			Watchdog.Start(path);
+			CritterProbe.Apply(harmony, path);
 			if (StagedCallbacks.Enabled)
 			{
 				HarmonyMethod remove = new HarmonyMethod(typeof(StagedCallbacks), nameof(StagedCallbacks.RemoveAll));
