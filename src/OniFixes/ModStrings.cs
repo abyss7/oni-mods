@@ -41,6 +41,12 @@ namespace OniFixes
 				public static LocString TOOLTIP = "The fill meter of an outhouse empties as soon as it is cleaned, instead of staying full until the next visit.";
 			}
 
+			public static class FLIMSYDOORS
+			{
+				public static LocString NAME = "Nobody stands on a Pneumatic Door";
+				public static LocString TOOLTIP = "A Pneumatic Door, flimsy and letting items and light through, is no floor: Duplicants, critters and items do not stand on it, open or closed, and fall through it. A ladder through a door laid flat still works. Other doors are unchanged.";
+			}
+
 			public static class DOORCLIMBERS
 			{
 				public static LocString NAME = "Critters stay on doors when loading";

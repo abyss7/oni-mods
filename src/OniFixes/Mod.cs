@@ -40,6 +40,7 @@ namespace OniFixes
 				(nameof(HiddenPriorities), Options.HiddenPriorities, HiddenPriorities.Apply),
 				(nameof(SmoothSlowMoves), Options.SmoothSlowMoves, SmoothSlowMoves.Apply),
 				(nameof(DoorClimbers), Options.DoorClimbers, DoorClimbers.Apply),
+				(nameof(FlimsyDoors), Options.FlimsyDoors, FlimsyDoors.Apply),
 			};
 			List<string> applied = new List<string>();
 			foreach ((string name, bool enabled, Action<Harmony> apply) in fixes)
