@@ -64,6 +64,10 @@ namespace OniFixes
 		[JsonProperty]
 		public bool OpenFlatDoors { get; set; } = true;
 
+		[Option(Key + "NEARBYFETCH.NAME", Key + "NEARBYFETCH.TOOLTIP", Key + "CATEGORY.DUPLICANTS")]
+		[JsonProperty]
+		public bool NearbyFetchByPath { get; set; } = true;
+
 		[Option(Key + "DEMANDDRIVENFETCH.NAME", Key + "DEMANDDRIVENFETCH.TOOLTIP", Key + "CATEGORY.DUPLICANTS")]
 		[JsonProperty]
 		public bool DemandDrivenFetch { get; set; } = true;

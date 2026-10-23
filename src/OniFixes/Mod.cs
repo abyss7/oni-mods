@@ -42,6 +42,7 @@ namespace OniFixes
 				(nameof(DoorClimbers), Options.DoorClimbers, DoorClimbers.Apply),
 				(nameof(FlimsyDoors), Options.FlimsyDoors, FlimsyDoors.Apply),
 				(nameof(OpenFlatDoors), Options.OpenFlatDoors, OpenFlatDoors.Apply),
+				(nameof(NearbyFetchByPath), Options.NearbyFetchByPath, NearbyFetchByPath.Apply),
 			};
 			List<string> applied = new List<string>();
 			foreach ((string name, bool enabled, Action<Harmony> apply) in fixes)

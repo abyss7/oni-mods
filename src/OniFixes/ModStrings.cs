@@ -41,6 +41,12 @@ namespace OniFixes
 				public static LocString TOOLTIP = "The fill meter of an outhouse empties as soon as it is cleaned, instead of staying full until the next visit.";
 			}
 
+			public static class NEARBYFETCH
+			{
+				public static LocString NAME = "No long walks for extra items";
+				public static LocString TOOLTIP = "A Duplicant fetching items picks up more of the same lying nearby in the same trip, but no longer one that is near only in a straight line while the walk to it is long (behind a floor or a wall).";
+			}
+
 			public static class OPENFLATDOORS
 			{
 				public static LocString NAME = "An open door laid flat is no floor";
