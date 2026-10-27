@@ -16,7 +16,7 @@ namespace OniDup
 	/// "DupCases: name: ok" or "FAILED" with numbers. The world is changed and Duplicants are added (some of them die): the check
 	/// is meant for a test run on a copy of the save.
 	///
-	/// Scenes: normal air; Carbon Dioxide at 2, 4, 6.5 and 14 kPa (stuffy air, a headache, poisoning, passing out and death
+	/// Scenes: normal air; Carbon Dioxide at 2, 5, 8 and 16 kPa (stuffy air, a headache, poisoning, passing out and death
 	/// from Carbon Dioxide); thin air at the four steps of the Oxygen scale; a vacuum (exposure, passing out, damage, death from
 	/// it); Oxygen at 3.3 atm (toxicity after half a cycle, seizures); a sharp drop of pressure (decompression injury, about 6 damage);
 	/// buried to the waist and over the head (stays in place, breathing with the option off and on, freed when dug out); a dig
@@ -38,7 +38,7 @@ namespace OniDup
 			Pill = 25, PillWithHat = 26, PillColonist = 27, TunnelDig = 28, VacuumBreach = 29;
 		private static readonly string[] Names =
 		{
-			"normal air", "stuffy air (CO2 2 kPa)", "a CO2 headache (4 kPa)", "CO2 poisoning (6.5 kPa)", "passing out and death from CO2 (14 kPa)",
+			"normal air", "stuffy air (CO2 2 kPa)", "a CO2 headache (5 kPa)", "CO2 poisoning (8 kPa)", "passing out and death from CO2 (16 kPa)",
 			"thin air (pO2 13 kPa)", "lightheaded (pO2 9.5 kPa)", "gasping for air (pO2 7 kPa)", "no oxygen (pO2 3 kPa)", "vacuum exposure and death",
 			"oxygen toxicity (3.3 atm)", "decompression injury", "buried to the waist", "buried over the head", "a wall on the way to a dig",
 			"a wall as the dig starts",
@@ -56,8 +56,8 @@ namespace OniDup
 		// Air poor in oxygen: Hydrogen with a little Oxygen (kPa); without a mask the lungs get about 10 kPa of Oxygen.
 		private const float PoorHydrogen = 90f, PoorOxygen = 11f;
 		// Carbon Dioxide in rooms 1-4, kPa; Oxygen in the lungs in rooms 5-8, kPa.
-		// Passing out at 14 kPa, well above the 8 kPa limit: Carbon Dioxide sinks, and the Duplicant breathes the best cell around.
-		private static readonly float[] CarbonDioxide = { 0f, 2f, 4f, 6.5f, 14f };
+		// Passing out at 16 kPa, well above the 10 kPa limit: Carbon Dioxide sinks, and the Duplicant breathes the best cell around.
+		private static readonly float[] CarbonDioxide = { 0f, 2f, 5f, 8f, 16f };
 		private static readonly float[] Lungs = { 13f, 9.5f, 7f, 3f };
 		private const float ToxicAtm = 3.3f, DropTo = 22.5f;
 
@@ -443,7 +443,7 @@ namespace OniDup
 						notes["co2-start"] = 1f;
 						if (!(air.CarbonDioxideLevel == 4 && air.Blocked && air.DrainName == (string)ONIDUP.BREATH.CARBONDIOXIDE && OnlyStatus(dupe, DupAir.CarbonDioxideOutStatus)))
 						{
-							Fail(room, "not passing out: " + Describe(dupe));
+							Fail(room, $"not passing out ({AirStatusText(dupe)}): " + Describe(dupe));
 						}
 					}
 					else if (t >= 75f && !notes.ContainsKey("co2-out"))
@@ -752,8 +752,13 @@ namespace OniDup
 			else if (t >= 8f)
 			{
 				float lost = notes["drop"] - health.hitPoints;
-				// 101 -> 22.5 kPa, 4.5 times: about 6 damage.
-				Expect(room, dupe.GetComponent<Effects>().HasEffect(DupAir.BarotraumaId) && lost >= 4.5f && lost <= 8f, dupe, $"health lost {lost:F1}");
+				// The room's air at the game's pressure scale down to 22.5 kPa: over 4 times, an injury; the damage by the ratio
+				// (5 at 4 times, 10 at 8), as recorded.
+				DupAirMonitor air = dupe.GetComponent<DupAirMonitor>();
+				float ratio = air.DecompressionFrom / Mathf.Max(air.DecompressionTo, 0.1f);
+				float expected = Mathf.Clamp(5f * Mathf.Log(ratio / 2f, 2f), 5f, 20f);
+				Expect(room, dupe.GetComponent<Effects>().HasEffect(DupAir.BarotraumaId) && ratio >= 4f && Mathf.Abs(lost - expected) < 0.6f, dupe,
+					$"{air.DecompressionFrom:F0} -> {air.DecompressionTo:F0} kPa ({ratio:F1} times), health lost {lost:F1}, expected {expected:F1}");
 			}
 		}
 

@@ -244,8 +244,8 @@ namespace OniDup
 			if (band != lastBand)
 			{
 				lastBand = band;
-				// The deep colours (vacuum, the last steps of Carbon Dioxide) are lightened more, keeping the order of the steps.
-				float lighten = band == Band.Vacuum ? 0.4f : band == Band.Blackout ? 0.45f : band == Band.Poisoning ? 0.35f : band == Band.Headache ? 0.25f : 0.1f;
+				// The deep colour of a vacuum is lightened more for the text.
+				float lighten = band == Band.Vacuum ? 0.4f : 0.1f;
 				Color text = Color.Lerp(colour, Color.white, lighten);
 				// A no-break space: the tooltip drops an ordinary space in front of a colour tag.
 				lastNote = "\u00A0" + string.Format(STRINGS.ELEMENTS.BREATHABLEDESC, text.ToHexString(), name);
@@ -303,8 +303,10 @@ namespace OniDup
 		private static readonly Color RichColour = new Color(0.95f, 0.85f, 0.3f, 1f), ToxicColour = new Color(0.95f, 0.5f, 0.15f, 1f);
 		// A vacuum: the deep blue of space, apart from the red of air without Oxygen.
 		private static readonly Color VacuumColour = Rgb(78, 78, 86);
-		// Carbon Dioxide on its own dark blue scale, from stuffy air to a blackout.
-		private static readonly Color[] CarbonColours = { Rgb(96, 126, 196), Rgb(68, 88, 176), Rgb(50, 54, 146), Rgb(38, 28, 100) };
+		// Carbon Dioxide on its own scale of violet to pink that gets brighter and stronger as it gets more dangerous: apart
+		// from the blues and reds of Oxygen, and the worst the brightest, so that it still shows in dim light (with Blackout
+		// the overlay is as dark as the cell). It was a dark blue scale with the blackout the darkest, lost in dim light.
+		private static readonly Color[] CarbonColours = { Rgb(176, 160, 214), Rgb(178, 112, 232), Rgb(226, 76, 222), Rgb(255, 196, 250) };
 		// Too little Oxygen: from the game's breathable blue to its unbreathable red through pale colours (chosen by the author):
 		// the middles of thin air, lightheaded and gasping for air.
 		private static readonly Color ThinColour = Rgb(156, 180, 168), LightheadedColour = Rgb(204, 140, 124), GaspingColour = Rgb(214, 88, 72);

@@ -108,7 +108,7 @@ namespace OniDup
 			public static class CO2PASSINGOUT
 			{
 				public static LocString NAME = "Overcome by CO<sub>2</sub>";
-				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> (8 kPa and more knocks a Duplicant out)\n\nPasses out within a minute, then dies of Carbon Dioxide poisoning unless brought into clean air\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects from it";
+				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link> (10 kPa and more knocks a Duplicant out)\n\nPasses out within a minute, then dies of Carbon Dioxide poisoning unless brought into clean air\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects from it";
 			}
 
 			public static class NOOXYGEN
@@ -132,7 +132,7 @@ namespace OniDup
 			public static class CO2POISONING
 			{
 				public static LocString NAME = "CO<sub>2</sub> Poisoning";
-				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: dizzy, slow and stressed (from 5 kPa; at 8 kPa and more they pass out and die unless brought into clean air)\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects from it";
+				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: dizzy, slow and stressed (from 6 kPa; at 10 kPa and more they pass out and die unless brought into clean air)\n\nAn <link=\"OXYGENMASK\">Oxygen Mask</link> protects from it";
 			}
 
 			public static class HYPOXIA
@@ -144,7 +144,7 @@ namespace OniDup
 			public static class CO2HEADACHE
 			{
 				public static LocString NAME = "CO<sub>2</sub> Headache";
-				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: a headache, worse at work, stressed (from 3 kPa; poisoning from 5 kPa, passing out from 8 kPa)";
+				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: a headache, worse at work, stressed (from 4 kPa; poisoning from 6 kPa, passing out from 10 kPa)";
 			}
 
 			public static class OXYGENTOXICITY
@@ -156,7 +156,7 @@ namespace OniDup
 			public static class STUFFYAIR
 			{
 				public static LocString NAME = "Stuffy Air";
-				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: drowsy and a little stressed (from 1 kPa; a headache from 3 kPa)";
+				public static LocString TOOLTIP = "The air this Duplicant breathes holds {CO2} kPa of <link=\"CARBONDIOXIDE\">Carbon Dioxide</link>: drowsy and a little stressed (from 1 kPa; a headache from 4 kPa)";
 			}
 
 			public static class DECOMPRESSION

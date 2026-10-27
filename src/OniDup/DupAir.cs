@@ -38,8 +38,8 @@ namespace OniDup
 	/// gas around runs into it, the air around has not got thinner.
 	///
 	/// Carbon Dioxide, by its partial pressure in the air the duplicant breathes (only while breathing: in pure Carbon Dioxide a
-	/// duplicant holds their breath and is not poisoned; a mask or a suit protects): 1-3 kPa stuffy air, 3-5 a headache, 5-8
-	/// poisoning, 8 and more passing out within a minute, then the game's suffocation (death: Carbon Dioxide Poisoning).
+	/// duplicant holds their breath and is not poisoned; a mask or a suit protects): 1-4 kPa stuffy air (a little stress, learning -2), 4-6 a
+	/// headache, 6-10 poisoning, 10 and more passing out within a minute, then the game's suffocation (death: Carbon Dioxide Poisoning).
 	///
 	/// Too much Oxygen: the game's air is pure Oxygen (1.8 kg in a cell is normal air), so the limits of the real world are moved
 	/// up: pO2 of 2 atm and more for half a cycle in a row gives Oxygen Toxicity, which goes after half a cycle at a normal
@@ -54,7 +54,9 @@ namespace OniDup
 		internal const float Vapour = 6.3f;
 		internal const float Normal = 15f, Thin = 11f, Hypoxic = 8f, Severe = 6f;
 		internal const string HypoxiaId = "OniDupHypoxia", SevereHypoxiaId = "OniDupSevereHypoxia", EbullismId = "OniDupEbullism", BarotraumaId = "OniDupBarotrauma", PoppedEarsId = "OniDupPoppedEars";
-		internal const float Stuffy = 1f, Headache = 3f, Poisoning = 5f, PassingOut = 8f; // kPa of Carbon Dioxide
+		// kPa of Carbon Dioxide, as for people: drowsy from about 1%, a headache from about 4%, dizzy and confused from about
+		// 6%, unconscious within minutes from about 10% (the author's choice of 2026-10-27; it was 1, 3, 5, 8).
+		internal const float Stuffy = 1f, Headache = 4f, Poisoning = 6f, PassingOut = 10f;
 		internal const float OxygenRich = 2f * 101.325f, OxygenToxic = 3f * 101.325f;     // kPa of Oxygen in the lungs
 		internal const string StuffyId = "OniDupStuffyAir", HeadacheId = "OniDupCarbonDioxideHeadache", PoisoningId = "OniDupCarbonDioxidePoisoning",
 			ToxicityId = "OniDupOxygenToxicity", SeizureId = "OniDupOxygenSeizure";
@@ -605,6 +607,10 @@ namespace OniDup
 		private System.Guid airStatus, injuryStatus;
 		private StatusItem airShown, injuryShown;
 		private float decompressionFrom, decompressionTo, decompressionDamage;
+		/// <summary>The last decompression: the pressure before and after (kPa) and the damage done (for the self-check).</summary>
+		internal float DecompressionFrom => decompressionFrom;
+		internal float DecompressionTo => decompressionTo;
+		internal float DecompressionDamage => decompressionDamage;
 
 		/// <summary>The worst of the duplicant's air, for the status list (the effects hold the penalties).</summary>
 		private StatusItem WorstAir()
