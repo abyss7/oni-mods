@@ -21,7 +21,11 @@ namespace OniFixes
 
 		internal static void Apply(Harmony harmony)
 		{
-			harmony.Patch(AccessTools.Method(typeof(Door), "OnSpawn"), postfix: new HarmonyMethod(typeof(DoorClimbers), nameof(DoorSpawned)));
+			// The Door class is patched only once the game's animations are loaded (DoorPatches).
+			DoorPatches.Later(harmony, h =>
+			{
+				h.Patch(AccessTools.Method(typeof(Door), "OnSpawn"), postfix: new HarmonyMethod(typeof(DoorClimbers), nameof(DoorSpawned)));
+			});
 			harmony.Patch(AccessTools.Method(typeof(CreatureFallMonitor.Instance), nameof(CreatureFallMonitor.Instance.ShouldFall)), postfix: new HarmonyMethod(typeof(DoorClimbers), nameof(NotYet)));
 			harmony.Patch(AccessTools.Method(typeof(Game), "OnSpawn"), postfix: new HarmonyMethod(typeof(DoorClimbers), nameof(Loaded)));
 		}

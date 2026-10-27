@@ -24,8 +24,12 @@ namespace OniFixes
 
 		internal static void Apply(Harmony harmony)
 		{
-			harmony.Patch(AccessTools.Method(typeof(Door), "OnSpawn"), postfix: new HarmonyMethod(typeof(FlimsyDoors), nameof(NoFloor)));
-			harmony.Patch(AccessTools.Method(typeof(Door), "OnCleanUp"), prefix: new HarmonyMethod(typeof(FlimsyDoors), nameof(FloorBack)));
+			// The Door class is patched only once the game's animations are loaded (DoorPatches).
+			DoorPatches.Later(harmony, h =>
+			{
+				h.Patch(AccessTools.Method(typeof(Door), "OnSpawn"), postfix: new HarmonyMethod(typeof(FlimsyDoors), nameof(NoFloor)));
+				h.Patch(AccessTools.Method(typeof(Door), "OnCleanUp"), prefix: new HarmonyMethod(typeof(FlimsyDoors), nameof(FloorBack)));
+			});
 			if (File.Exists(Path.Combine(ModContext.Folder, "verify_flimsy_doors.txt")))
 			{
 				harmony.Patch(AccessTools.Method(typeof(Game), "LateUpdate"), postfix: new HarmonyMethod(typeof(FlimsyDoors), nameof(Verify)));

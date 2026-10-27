@@ -912,6 +912,19 @@ namespace OniLight
 			bool ok = Mathf.Abs(mBright - mUsual - 0.15f) < 0.01f && Mathf.Abs(Mathf.Max(mUsual - 0.2f, floor) - mDim) < 0.01f
 				&& Mathf.Abs(Mathf.Max(mUsual - 0.5f, floor) - mDark) < 0.01f;
 			Expect("work speed by the light", ok, string.Join(", ", at) + $"; moves slowed in the dark {DarkWork.Slowed}, dark errands stopped {DarkWork.Stopped}");
+			// The game's "Lit Workspace" status: offered once in bright light, taken back once below it, not on every tick
+			// (that filled the Duplicant's status list with fading copies).
+			{
+				long takenBefore = DarkWork.LitTakenBack;
+				Teleport(darkDupe, bright);
+				for (int i = 0; i < 20; i++) workable.GetEfficiencyMultiplier(worker);
+				Teleport(darkDupe, dim);
+				for (int i = 0; i < 20; i++) workable.GetEfficiencyMultiplier(worker);
+				long taken = DarkWork.LitTakenBack - takenBefore;
+				Teleport(darkDupe, pocket);
+				Expect("the Lit Workspace status does not flicker in dim light", bright >= 0 && dim >= 0 && taken == 1,
+					$"taken back {taken} times over 20 ticks in bright then 20 in dim light (once expected)");
+			}
 			Util.KDestroyGameObject(dig);
 		}
 

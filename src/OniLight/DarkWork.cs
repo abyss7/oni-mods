@@ -30,7 +30,7 @@ namespace OniLight
 		private static readonly HashSet<WorkerBase> toStop = new HashSet<WorkerBase>();
 		private static HashSet<ChoreGroup> needLight;
 		private static float lastCheck = -1f;
-		internal static long Slowed, Stopped, Checks, InTheDarkCount;
+		internal static long Slowed, Stopped, Checks, InTheDarkCount, LitTakenBack;
 
 		/// <summary>For the self-check: how long a Duplicant has been awake in total darkness, s (-1: not now).</summary>
 		internal static float DarkFor(MinionIdentity minion) =>
@@ -55,7 +55,9 @@ namespace OniLight
 			{
 				harmony.Patch(AccessTools.Method(typeof(Db), nameof(Db.Initialize)), postfix: new HarmonyMethod(typeof(DarkWork), nameof(AddToDb)));
 			}
-			harmony.Patch(AccessTools.Method(typeof(Workable), nameof(Workable.GetEfficiencyMultiplier)), postfix: new HarmonyMethod(typeof(DarkWork), nameof(ByLight)));
+			harmony.Patch(AccessTools.Method(typeof(Workable), nameof(Workable.GetEfficiencyMultiplier)),
+				prefix: new HarmonyMethod(typeof(DarkWork), nameof(NoGameBonusBelowBright)), postfix: new HarmonyMethod(typeof(DarkWork), nameof(ByLight)),
+				finalizer: new HarmonyMethod(typeof(DarkWork), nameof(FlagBack)));
 			harmony.Patch(AccessTools.Method(typeof(Workable), nameof(Workable.StopWork)), postfix: new HarmonyMethod(typeof(DarkWork), nameof(Stopping)));
 			harmony.Patch(AccessTools.Method(typeof(ChoreProvider), nameof(ChoreProvider.AddChore)), postfix: new HarmonyMethod(typeof(DarkWork), nameof(AddLightPrecondition)));
 			harmony.Patch(AccessTools.Method(typeof(Workable), nameof(Workable.WorkTick)), prefix: new HarmonyMethod(typeof(DarkWork), nameof(StopInTheDark)));
@@ -85,21 +87,42 @@ namespace OniLight
 		/// <summary>The share of work speed the light gives, against the usual.</summary>
 		internal static float Bonus(int lux) => lux <= 0 ? -0.5f : lux < Dim ? -0.2f : lux < Bright ? 0f : 0.15f;
 
-		private static void ByLight(Workable __instance, WorkerBase worker, ref float __result)
+		/// <summary>
+		/// Below bright light the game's own light bonus is kept out for this call (its flag off): else the game would offer
+		/// its "Lit Workspace" status on every work tick and this mod take it back, and the Duplicant's status list filled
+		/// with fading copies of it. __state: the flag as it was, -1 when not this mod's business.
+		/// </summary>
+		private static void NoGameBonusBelowBright(Workable __instance, WorkerBase worker, out int __state)
 		{
+			__state = -1;
 			if (!__instance.lightEfficiencyBonus || worker == null)
 			{
 				return;
 			}
 			int lux = Lux(Grid.PosToCell(worker.gameObject));
-			// The game has added its +15% for any light; the light's own share instead.
-			float game = lux > 0 ? TUNING.DUPLICANTSTATS.STANDARD.Light.LIGHT_WORK_EFFICIENCY_BONUS : 0f;
+			__state = lux;
+			if (lux < Bright)
+			{
+				__instance.lightEfficiencyBonus = false;
+			}
+		}
+
+		private static void ByLight(Workable __instance, WorkerBase worker, ref float __result, int __state)
+		{
+			if (__state < 0)
+			{
+				return;
+			}
+			int lux = __state;
+			// From bright light the game has added its +15%; below it, nothing. The light's own share instead.
+			float game = lux >= Bright ? TUNING.DUPLICANTSTATS.STANDARD.Light.LIGHT_WORK_EFFICIENCY_BONUS : 0f;
 			__result = Mathf.Max(__result - game + Bonus(lux), __instance.minimumAttributeMultiplier);
-			// The game's "lit workspace" only for bright light; dim and dark have their own.
+			// The game's "lit workspace" only for bright light (offered by the game then): taken back once when the light drops.
 			if (lux < Bright && __instance.lightEfficiencyBonusStatusItemHandle != Guid.Empty)
 			{
 				worker.RevokeStatusItem(__instance.lightEfficiencyBonusStatusItemHandle);
 				__instance.lightEfficiencyBonusStatusItemHandle = Guid.Empty;
+				LitTakenBack++;
 			}
 			StatusItem wanted = lux <= 0 ? darkWorkspace : lux < Dim ? dimWorkspace : null;
 			offered.TryGetValue(__instance, out (Guid handle, StatusItem item) current);
@@ -119,6 +142,13 @@ namespace OniLight
 			{
 				offered.Remove(__instance);
 			}
+		}
+
+		/// <summary>The game's light flag back as it was, also if the game's method threw.</summary>
+		private static Exception FlagBack(Workable __instance, int __state, Exception __exception)
+		{
+			if (__state >= 0) __instance.lightEfficiencyBonus = true;
+			return __exception;
 		}
 
 		private static void Stopping(Workable __instance, WorkerBase workerToStop)

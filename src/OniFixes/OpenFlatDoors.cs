@@ -30,9 +30,13 @@ namespace OniFixes
 
 		internal static void Apply(Harmony harmony)
 		{
-			harmony.Patch(AccessTools.Method(typeof(Door), "OnSpawn"), postfix: new HarmonyMethod(typeof(OpenFlatDoors), nameof(Spawned)) { priority = Priority.Low });
-			harmony.Patch(AccessTools.Method(typeof(Door), "SetPassableState"), postfix: new HarmonyMethod(typeof(OpenFlatDoors), nameof(StateChanged)));
-			harmony.Patch(AccessTools.Method(typeof(Door), "OnCleanUp"), prefix: new HarmonyMethod(typeof(OpenFlatDoors), nameof(CleaningUp)));
+			// The Door class is patched only once the game's animations are loaded (DoorPatches).
+			DoorPatches.Later(harmony, h =>
+			{
+				h.Patch(AccessTools.Method(typeof(Door), "OnSpawn"), postfix: new HarmonyMethod(typeof(OpenFlatDoors), nameof(Spawned)) { priority = Priority.Low });
+				h.Patch(AccessTools.Method(typeof(Door), "SetPassableState"), postfix: new HarmonyMethod(typeof(OpenFlatDoors), nameof(StateChanged)));
+				h.Patch(AccessTools.Method(typeof(Door), "OnCleanUp"), prefix: new HarmonyMethod(typeof(OpenFlatDoors), nameof(CleaningUp)));
+			});
 			harmony.Patch(AccessTools.Method(typeof(MinionPathFinderAbilities), nameof(MinionPathFinderAbilities.TraversePath)), postfix: new HarmonyMethod(typeof(OpenFlatDoors), nameof(NotUpOntoIt)));
 			if (File.Exists(Path.Combine(ModContext.Folder, "verify_open_doors.txt")))
 			{
