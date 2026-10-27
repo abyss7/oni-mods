@@ -37,8 +37,8 @@ namespace OniGasMix
 		/// <summary>Plants and the air around them (GasLayerPlants.cs).</summary>
 		public static class PLANTS
 		{
-			public static LocString OXYFERN_INTAKE_NAME = "Short of Carbon Dioxide: {rate}";
-			public static LocString OXYFERN_INTAKE_TOOLTIP = "This plant takes in " + STRINGS.UI.PRE_KEYWORD + "Carbon Dioxide" + STRINGS.UI.PST_KEYWORD + " and gives " + STRINGS.UI.PRE_KEYWORD + "Oxygen" + STRINGS.UI.PST_KEYWORD + " at <b>{rate}</b> of its full rate: the air around it holds <b>{co2}</b> of Carbon Dioxide.\n\nIt works from {from} and at its full rate from {full}. It does not wilt for the lack of Carbon Dioxide.";
+			/// <summary>The Oxyfern's Water and Dirt usage follows the Carbon Dioxide around it (a modifier of the fertilizer usage).</summary>
+			public static LocString CARBON_DIOXIDE_MODIFIER = "Carbon Dioxide in the air";
 		}
 
 		/// <summary>Mod settings (Options.cs): the settings window looks them up by the keys STRINGS.ONIGASMIX.OPTIONS.<setting>.NAME and .TOOLTIP.</summary>

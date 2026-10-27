@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using HarmonyLib;
+using Klei.AI;
 using OniCommon;
 using UnityEngine;
 
@@ -17,7 +18,7 @@ namespace OniGasMix
 	internal static class GasLayerPlantCases
 	{
 		private const int RoomWidth = 3, RoomHeight = 4;
-		private const float Warm = 300f, StartAfter = 5f, FillAfter = 0.5f, Wait = 40f;
+		private const float Warm = 300f, StartAfter = 5f, FillAfter = 0.5f, MeasureFrom = 15f, Wait = 30f;
 		private const string Oxyfern = "Oxyfern", Mealwood = "BasicSingleHarvestPlant";
 
 		private enum Expect { Normal, Low, Wrong }
@@ -28,15 +29,21 @@ namespace OniGasMix
 			internal (SimHashes gas, float kPa)[] air;
 			internal Expect expect;
 			internal float rateFrom = -1f, rateTo = -1f;
-			internal GameObject go;
+			/// <summary>Planted in a Planter Box with Water and Dirt (a domesticated plant), rather than wild.</summary>
+			internal bool planted;
+			internal GameObject go, plot;
+			internal float water0, dirt0, time0;
 		}
 
 		private static readonly Scene[] Scenes =
 		{
 			new Scene { name = "an Oxyfern in air with 0.5 kPa of CO2", plant = Oxyfern, air = new[] { (SimHashes.Oxygen, 100f), (SimHashes.CarbonDioxide, 0.5f) }, expect = Expect.Normal, rateFrom = 0.3f, rateTo = 0.6f },
 			new Scene { name = "an Oxyfern in air with 2 kPa of CO2", plant = Oxyfern, air = new[] { (SimHashes.Oxygen, 100f), (SimHashes.CarbonDioxide, 2f) }, expect = Expect.Normal, rateFrom = 0.999f, rateTo = 1f },
-			new Scene { name = "an Oxyfern in pure Oxygen", plant = Oxyfern, air = new[] { (SimHashes.Oxygen, 100f) }, expect = Expect.Normal, rateFrom = 0f, rateTo = 0f },
+			new Scene { name = "an Oxyfern in air with 0.05 kPa of CO2", plant = Oxyfern, air = new[] { (SimHashes.Oxygen, 100f), (SimHashes.CarbonDioxide, 0.05f) }, expect = Expect.Normal, rateFrom = 0.01f, rateTo = 0.15f },
+			new Scene { name = "an Oxyfern in pure Oxygen", plant = Oxyfern, air = new[] { (SimHashes.Oxygen, 100f) }, expect = Expect.Wrong, rateFrom = 0f, rateTo = 0f },
 			new Scene { name = "an Oxyfern in thin CO2 (5 kPa)", plant = Oxyfern, air = new[] { (SimHashes.CarbonDioxide, 5f) }, expect = Expect.Low, rateFrom = 0.999f, rateTo = 1f },
+			new Scene { name = "a planted Oxyfern in air with 2 kPa of CO2", plant = Oxyfern, planted = true, air = new[] { (SimHashes.Oxygen, 100f), (SimHashes.CarbonDioxide, 2f) }, expect = Expect.Normal, rateFrom = 0.999f, rateTo = 1f },
+			new Scene { name = "a planted Oxyfern in air with 0.5 kPa of CO2", plant = Oxyfern, planted = true, air = new[] { (SimHashes.Oxygen, 100f), (SimHashes.CarbonDioxide, 0.5f) }, expect = Expect.Normal, rateFrom = 0.25f, rateTo = 0.6f },
 			new Scene { name = "a Mealwood with 12 kPa of Oxygen in 60 kPa of Hydrogen", plant = Mealwood, air = new[] { (SimHashes.Hydrogen, 60f), (SimHashes.Oxygen, 12f) }, expect = Expect.Normal },
 			new Scene { name = "a Mealwood in thin Oxygen (5 kPa)", plant = Mealwood, air = new[] { (SimHashes.Oxygen, 5f) }, expect = Expect.Low },
 			new Scene { name = "a Mealwood in Chlorine", plant = Mealwood, air = new[] { (SimHashes.ChlorineGas, 100f) }, expect = Expect.Wrong },
@@ -60,7 +67,7 @@ namespace OniGasMix
 
 		private static void Frame()
 		{
-			if (phase > 4 || Game.Instance == null || GameClock.Instance == null || !GasLayer.Moving)
+			if (phase > 6 || Game.Instance == null || GameClock.Instance == null || !GasLayer.Moving)
 			{
 				return;
 			}
@@ -77,7 +84,7 @@ namespace OniGasMix
 					if (!FindSite())
 					{
 						Debug.LogWarning($"[OniGasMix] PlantCases: FAILED: no free {SiteWidth} x {SiteHeight} place in the active world");
-						phase = 5;
+						phase = 7;
 						return;
 					}
 					BuildWalls();
@@ -97,21 +104,54 @@ namespace OniGasMix
 				{
 					for (int i = 0; i < Scenes.Length; i++)
 					{
-						Scenes[i].go = Spawn(Scenes[i].plant, Cell(RoomLeft(i) + 1, 1));
+						int cell = Cell(RoomLeft(i) + 1, 1);
+						if (Scenes[i].planted)
+						{
+							Scenes[i].plot = Assets.GetBuildingDef("PlanterBox").Build(cell, Orientation.Neutral, null, new[] { SimHashes.Dirt.CreateTag() }, Warm, playsound: false, timeBuilt: now);
+						}
+						else
+						{
+							Scenes[i].go = Spawn(Scenes[i].plant, cell);
+						}
 					}
 					Next(now);
 				}
-				else if (phase == 4 && now >= phaseTime + Wait)
+				else if (phase == 4 && now >= phaseTime + FillAfter)
 				{
-					Evaluate();
-					phase = 5;
+					foreach (Scene scene in Scenes)
+					{
+						if (scene.planted)
+						{
+							scene.go = Plant(scene);
+						}
+					}
+					Next(now);
+				}
+				else if (phase == 5 && now >= phaseTime + MeasureFrom)
+				{
+					foreach (Scene scene in Scenes)
+					{
+						Storage storage = scene.plot != null ? scene.plot.GetComponent<Storage>() : null;
+						if (storage != null)
+						{
+							scene.water0 = storage.GetMassAvailable(SimHashes.Water);
+							scene.dirt0 = storage.GetMassAvailable(SimHashes.Dirt);
+							scene.time0 = now;
+						}
+					}
+					Next(now);
+				}
+				else if (phase == 6 && now >= phaseTime + Wait)
+				{
+					Evaluate(now);
+					phase = 7;
 					App.Quit();
 				}
 			}
 			catch (Exception e)
 			{
 				Debug.LogWarning($"[OniGasMix] PlantCases: FAILED with an exception in phase {phase}: {e}");
-				phase = 5;
+				phase = 7;
 			}
 		}
 
@@ -238,7 +278,25 @@ namespace OniGasMix
 			return go;
 		}
 
-		private static void Evaluate()
+		/// <summary>The scene's plant from a seed in its Planter Box, with Water and Dirt in the box.</summary>
+		private static GameObject Plant(Scene scene)
+		{
+			PlantablePlot plot = scene.plot != null ? scene.plot.GetComponent<PlantablePlot>() : null;
+			GameObject prefab = Assets.GetPrefab(new Tag(scene.plant + "Seed"));
+			if (plot == null || prefab == null)
+			{
+				return null;
+			}
+			GameObject seed = GameUtil.KInstantiate(prefab, scene.plot.transform.GetPosition(), Grid.SceneLayer.Ore);
+			seed.SetActive(true);
+			plot.ForceDeposit(seed);
+			Storage storage = scene.plot.GetComponent<Storage>();
+			storage.AddLiquid(SimHashes.Water, 50f, Warm, byte.MaxValue, 0);
+			storage.AddOre(SimHashes.Dirt, 20f, Warm, byte.MaxValue, 0);
+			return plot.Occupant;
+		}
+
+		private static void Evaluate(float now)
 		{
 			int passed = 0;
 			var lines = new List<string>();
@@ -267,9 +325,40 @@ namespace OniGasMix
 					ok &= intake != null && intake.Rate >= scene.rateFrom - 1e-4f && intake.Rate <= scene.rateTo + 1e-4f;
 				}
 				float co2 = GasLayerPlants.PartialAround(scene.go, SimHashes.CarbonDioxide, out _);
+				string fernNumbers = "";
+				if (intake != null)
+				{
+					// The converter's real average rates: Oxygen 50 times the Carbon Dioxide it converts.
+					ElementConverter converter = scene.go.GetComponent<ElementConverter>();
+					float converted = converter.consumedElements[0].Rate, oxygen = converter.outputElements[0].Rate;
+					fernNumbers = $", converts {converted * 1000f:0.###} g/s of CO2 into {oxygen * 1000f:0.##} g/s of Oxygen";
+					if (converted > 1e-6f)
+					{
+						ok &= oxygen / converted > 40f && oxygen / converted < 60f;
+					}
+					float usage = scene.go.GetAttributes().Get(Db.Get().PlantAttributes.FertilizerUsageMod).GetTotalValue();
+					if (scene.planted)
+					{
+						float expected = intake.PlantedIntake() * intake.Rate;
+						ok &= Mathf.Abs(scene.go.GetComponent<ElementConsumer>().consumptionRate - expected) <= expected * 0.01f + 1e-9f;
+						Storage storage = scene.plot.GetComponent<Storage>();
+						float span = Mathf.Max(1f, now - scene.time0);
+						float water = (scene.water0 - storage.GetMassAvailable(SimHashes.Water)) / span, dirt = (scene.dirt0 - storage.GetMassAvailable(SimHashes.Dirt)) / span;
+						float waterExpected = 0.031666666f * usage, dirtExpected = usage / 150f;
+						float tolerance = scene.rateTo < 0.999f ? 0.3f : 0.15f;
+						ok &= Mathf.Abs(water - waterExpected) <= waterExpected * tolerance && Mathf.Abs(dirt - dirtExpected) <= dirtExpected * tolerance;
+						if (scene.rateTo >= 0.999f)
+						{
+							ok &= Mathf.Abs(oxygen - OxyfernIntake.OxygenPerWater * 0.031666666f) <= 0.2f * OxyfernIntake.OxygenPerWater * 0.031666666f;
+						}
+						fernNumbers += $", drinks {water * 1000f:0.##} g/s of Water (expected {waterExpected * 1000f:0.##}), eats {dirt * 1000f:0.##} g/s of Dirt (expected {dirtExpected * 1000f:0.##})" +
+							(water > 0f ? $", Oxygen {oxygen / water * 100f:F0}% of the Water" : "");
+					}
+				}
 				string numbers = $"pressure {GasLayerPlants.Format(plant.GetExternalPressure())} (needs {GasLayerPlants.Format(plant.pressureWarning_Low)}), state {state}, " +
 					$"atmosphere {(safe ? "suits" : "does not suit")} ({plant.currentAtmoElement?.id}), {(wilting ? "wilting" : "not wilting")}" +
-					(intake != null ? $", CO2 {co2:0.###} kPa, intake {intake.Rate * 100f:F0}% ({scene.go.GetComponent<ElementConsumer>().consumptionRate * 1000f:0.###} g/s)" : "") +
+					(intake != null ? $", CO2 {co2:0.###} kPa, intake {intake.Rate * 100f:F0}% ({scene.go.GetComponent<ElementConsumer>().consumptionRate * 1000f:0.###} g/s), water and dirt x{scene.go.GetAttributes().Get(Db.Get().PlantAttributes.FertilizerUsageMod).GetTotalValue():0.##}" : "") +
+					fernNumbers +
 					(wilt != null && wilting ? $", wilt: {wilt.WiltCausesString().Replace("\n", " ")}" : "");
 				if (ok)
 				{
@@ -282,7 +371,7 @@ namespace OniGasMix
 				}
 			}
 			// What the player reads: the first descriptor of an Oxyfern and of a Mealwood.
-			foreach (int i in new[] { 0, 4 })
+			foreach (int i in new[] { 0, Array.FindIndex(Scenes, scene => scene.planted), Array.FindIndex(Scenes, scene => scene.plant == Mealwood) })
 			{
 				PressureVulnerable plant = Scenes[i].go != null ? Scenes[i].go.GetComponent<PressureVulnerable>() : null;
 				List<Descriptor> descriptors = plant != null ? plant.GetDescriptors(Scenes[i].go) : null;
@@ -290,6 +379,18 @@ namespace OniGasMix
 				descriptors?.ForEach(d => texts.Add(d.text));
 				Debug.Log($"[OniGasMix] PlantCases: {Scenes[i].plant} requirements: {string.Join(" | ", texts)}");
 			}
+			// The low-pressure thresholds of every plant in the game, as the player reads them.
+			var thresholds = new List<string>();
+			foreach (GameObject prefab in Assets.GetPrefabsWithComponent<PressureVulnerable>())
+			{
+				PressureVulnerable plant = prefab.GetComponent<PressureVulnerable>();
+				if (plant.pressure_sensitive && plant.pressureWarning_Low > 0f)
+				{
+					thresholds.Add($"{prefab.PrefabID()} {GasLayerPlants.Format(plant.pressureWarning_Low)}");
+				}
+			}
+			thresholds.Sort();
+			Debug.Log($"[OniGasMix] PlantCases: low-pressure thresholds: {string.Join(", ", thresholds)}");
 			Debug.Log($"[OniGasMix] PlantCases: {passed} of {Scenes.Length} passed");
 		}
 	}

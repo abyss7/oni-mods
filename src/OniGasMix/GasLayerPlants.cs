@@ -15,9 +15,11 @@ namespace OniGasMix
 	/// its own gases: an Oxyfern among Duplicants, with a little Carbon Dioxide in the air, wilted from "low pressure" in a
 	/// room at a full atmosphere. Here a gas cell gives the plant the sum of the partial pressures of its gases (kPa, by the
 	/// pressure mod's scale; 1.8 kg is one atmosphere without it), a vacuum cell gives zero, and the plant takes the mean of its
-	/// cells. Every plant that the game makes sensitive to low pressure wilts below MinimumPressure (10 kPa), whatever its own
-	/// threshold was: the game's lower thresholds (25 g for the Oxyfern, the Nosh Sprout, the Dasha Saltvine, the
-	/// Hydrocactus) were there because they counted only the plant's own gas. The upper thresholds stay as they are.
+	/// cells. A plant that the game makes sensitive to low pressure wilts below the game's threshold read as a pressure (the
+	/// threshold's mass of the plant's only gas, or of Oxygen when it takes several or any, at room temperature), but never
+	/// below MinimumPressure (10 kPa): the game's lower thresholds (25 g for the Oxyfern, the Nosh Sprout, the Dasha Saltvine,
+	/// the Hydrocactus) were there because they counted only the plant's own gas; plants that wanted more air keep wanting it
+	/// (the author's decision). The upper thresholds stay as they are.
 	///
 	/// Inside, the game keeps the pressure as a mass; here that mass is the mass of Oxygen at room temperature that gives the
 	/// same pressure. In a room of pure Oxygen a plant sees what it saw in the game, and its upper thresholds keep their
@@ -26,10 +28,17 @@ namespace OniGasMix
 	/// Atmosphere: a plant's gases still count as its atmosphere when one of them is the main gas, makes up the share any
 	/// game logic takes as present, or is there with at least the plant's low-pressure threshold of partial pressure.
 	///
-	/// Oxyfern: Carbon Dioxide is no longer its atmosphere but its food (OxyfernIntake): it does not wilt for the lack of it,
-	/// it works slower. Its intake grows with the partial pressure of Carbon Dioxide around it, from nothing at 0.01 kPa
-	/// (below that real leaves breathe out as much as they take in) to the full rate at 1 kPa (where Duplicants start to find
-	/// the air stuffy). The Oxygen it gives follows the intake.
+	/// Oxyfern (OxyfernIntake): Carbon Dioxide stays its atmosphere, but it counts as there from OxyfernIntake.From (0.01 kPa,
+	/// below that real leaves breathe out as much as they take in); with less in all its cells the fern wilts for the wrong
+	/// atmosphere, as in the game. Its intake grows with the partial pressure of Carbon Dioxide around it, from nothing at
+	/// 0.01 kPa to the full rate at 1 kPa (where Duplicants start to find the air stuffy). The Oxygen it gives follows the
+	/// intake by the game's own ratio (50 times the mass of the Carbon Dioxide), and so do the Water and Dirt of a planted fern.
+	/// A planted fern gives Oxygen of OxyfernIntake.OxygenPerWater (85%) of the mass of Water it drinks: less than an
+	/// Electrolyzer (89%, with Hydrogen), and no more than the Oxygen atoms of that Water hold (the author's decision of
+	/// 2026-10-27; the game's fern gave 99%, more Oxygen than its Water holds). Its intake of Carbon Dioxide is lowered to
+	/// match, so the game's ratio and the Duplicants' breath (2 g of Carbon Dioxide per 100 g of Oxygen) still close the
+	/// loop: Oxygen 26.9 g/s, Carbon Dioxide 0.54 g/s at the full rate, 3.7 ferns per Duplicant. A wild fern stays as in
+	/// the game.
 	/// </summary>
 	internal static class GasLayerPlants
 	{
@@ -148,7 +157,8 @@ namespace OniGasMix
 			PressureVulnerable.testAreaCount++;
 			bool mainSafe = plant.IsSafeElement(main);
 			bool byShare = best != null && GasMixture.Has(cell, best.idx);
-			bool byPressure = best != null && plant.pressureWarning_Low > 0f && own / KPaPerKg >= plant.pressureWarning_Low;
+			bool byPressure = best != null && (OxyfernIntake.Ferns.Contains(plant) ? own >= OxyfernIntake.From
+				: plant.pressureWarning_Low > 0f && own / KPaPerKg >= plant.pressureWarning_Low);
 			if (!mainSafe && !byShare && byPressure)
 			{
 				ByPressure++;
@@ -165,11 +175,18 @@ namespace OniGasMix
 			return true;
 		}
 
-		private static void Thresholds(PressureVulnerable __instance)
+		private static void Thresholds(PressureVulnerable __instance, SimHashes[] safeAtmospheres)
 		{
 			if (__instance.pressureWarning_Low > 0f)
 			{
-				__instance.pressureWarning_Low = MinimumPressure / KPaPerKg;
+				// The game's threshold is a mass of the plant's gas: of its only gas, otherwise of air (Oxygen).
+				Element gas = safeAtmospheres != null && safeAtmospheres.Length == 1 ? ElementLoader.FindElementByHash(safeAtmospheres[0]) : null;
+				if (gas == null || !gas.IsGas)
+				{
+					gas = ElementLoader.FindElementByHash(SimHashes.Oxygen);
+				}
+				float game = gas != null ? Pressure(gas, __instance.pressureWarning_Low, RoomTemperature) : __instance.pressureWarning_Low * KPaPerKg;
+				__instance.pressureWarning_Low = Mathf.Max(MinimumPressure, game) / KPaPerKg;
 			}
 			if (__instance.pressureLethal_Low > __instance.pressureWarning_Low)
 			{
@@ -197,7 +214,6 @@ namespace OniGasMix
 			db.Amounts.AirPressure.SetDisplayer(new StandardAmountDisplayer(GameUtil.UnitClass.Mass, GameUtil.TimeSlice.None, new KPaFormatter()));
 			db.CreatureStatusItems.AtmosphericPressureTooLow.resolveStringCallback = PressureStatus;
 			db.CreatureStatusItems.AtmosphericPressureTooHigh.resolveStringCallback = PressureStatus;
-			OxyfernIntake.CreateStatus();
 		}
 
 		private static string PressureStatus(string text, object data)
@@ -246,10 +262,6 @@ namespace OniGasMix
 		private static void OxyfernPrefab(GameObject __result)
 		{
 			__result.AddOrGet<OxyfernIntake>();
-			// Carbon Dioxide is its food, not its atmosphere (OxyfernIntake): the requirement goes, from the prefab too, for the
-			// seed's and the codex's descriptions. The game adds it to each new plant again; OxyfernIntake removes it there.
-			PressureVulnerable plant = __result.GetComponent<PressureVulnerable>();
-			plant?.safe_atmospheres?.Clear();
 		}
 
 		/// <summary>The partial pressure of a gas, kPa, averaged over a plant's open cells (zero where there is no gas).</summary>
@@ -287,61 +299,74 @@ namespace OniGasMix
 	}
 
 	/// <summary>
-	/// The Oxyfern's intake of Carbon Dioxide by the gas around it (GasLayerPlants): every second the game's rate (a wild or
-	/// a planted fern) times Rate, a share that grows linearly from 0 at From kPa of Carbon Dioxide to 1 at Full kPa. The
-	/// Oxygen follows: the game's converter gives it in proportion to the Carbon Dioxide the fern has taken in. Below the full
-	/// rate the fern shows a status with its share and the Carbon Dioxide around it.
+	/// The Oxyfern's work by the Carbon Dioxide around it (GasLayerPlants): every second the game's intake (a wild or a planted
+	/// fern) times Rate, a share that grows linearly from 0 at From kPa of Carbon Dioxide to 1 at Full kPa. The Oxygen
+	/// follows: the game's converter gives it in proportion to the Carbon Dioxide the fern has taken in, and its own statuses
+	/// ("Using", "Emitting") show the real average rates. The Water and Dirt a planted fern takes follow the same share: a
+	/// multiplier on the game's fertilizer usage attribute (the plant's panel shows the real rates by it), and the rates of
+	/// the fern's absorbers, which the game fixes when they start, are set by it every second.
 	/// </summary>
 	internal sealed class OxyfernIntake : KMonoBehaviour, ISim1000ms
 	{
 		internal const float From = 0.01f, Full = 1f;
-		private static StatusItem status;
+		/// <summary>A planted fern's Oxygen per mass of the Water it drinks.</summary>
+		internal const float OxygenPerWater = 0.85f;
+		/// <summary>The game's planted intake of Carbon Dioxide (Oxyfern.SetConsumptionRate) and its Water (OxyfernConfig), kg/s.</summary>
+		private const float GameIntake = 0.00062500004f, GameWater = 0.031666666f;
+		/// <summary>The ferns alive now: for them Carbon Dioxide counts as present from From kPa (GasLayerPlants.PlantCell).</summary>
+		internal static readonly HashSet<PressureVulnerable> Ferns = new HashSet<PressureVulnerable>();
+		private static readonly AccessTools.FieldRef<IrrigationMonitor.Instance, HandleVector<int>.Handle> IrrigationHandle =
+			AccessTools.FieldRefAccess<IrrigationMonitor.Instance, HandleVector<int>.Handle>("absorberHandle");
+		private static readonly AccessTools.FieldRef<FertilizationMonitor.Instance, HandleVector<int>.Handle> FertilizerHandle =
+			AccessTools.FieldRefAccess<FertilizationMonitor.Instance, HandleVector<int>.Handle>("absorberHandle");
+		private static readonly AccessTools.FieldRef<FertilizationMonitor.Instance, PlantElementAbsorber.ConsumeInfo[]> FertilizerElements =
+			AccessTools.FieldRefAccess<FertilizationMonitor.Instance, PlantElementAbsorber.ConsumeInfo[]>("consumedElements");
 
 #pragma warning disable CS0649
 		[MyCmpReq] private Oxyfern fern;
+		[MyCmpReq] private ReceptacleMonitor receptacle;
 		[MyCmpReq] private ElementConsumer consumer;
 		[MyCmpReq] private PressureVulnerable plant;
-		[MyCmpGet] private KSelectable selectable;
 #pragma warning restore CS0649
 
 		private float applied = -1f;
-		private bool shown;
+		private AttributeModifier usage;
+		private AttributeInstance usageAttribute;
 
-		/// <summary>The share of the game's intake the fern takes now, 0..1.</summary>
+		/// <summary>The share of the game's rates the fern works at now, 0..1.</summary>
 		internal float Rate { get; private set; } = 1f;
 
 		/// <summary>Carbon Dioxide around the fern at the last update, kPa.</summary>
 		internal float CarbonDioxide { get; private set; }
 
-		internal static void CreateStatus()
-		{
-			status = new StatusItem("OniGasMixOxyfernIntake", ONIGASMIX.PLANTS.OXYFERN_INTAKE_NAME, ONIGASMIX.PLANTS.OXYFERN_INTAKE_TOOLTIP, "",
-				StatusItem.IconType.Info, NotificationType.Neutral, false, OverlayModes.None.ID)
-			{
-				resolveStringCallback = (text, data) => data is OxyfernIntake intake ? intake.Explain(text) : text,
-				resolveTooltipCallback = (text, data) => data is OxyfernIntake intake ? intake.Explain(text) : text,
-			};
-		}
-
-		private string Explain(string text)
-		{
-			return text.Replace("{rate}", $"{Rate * 100f:F0}%").Replace("{co2}", $"{CarbonDioxide:0.##} kPa")
-				.Replace("{from}", $"{From:0.##} kPa").Replace("{full}", $"{Full:0.##} kPa");
-		}
-
 		public override void OnSpawn()
 		{
 			base.OnSpawn();
-			plant.safe_atmospheres?.Clear();
+			Ferns.Add(plant);
+			Klei.AI.Attribute attribute = Db.Get().PlantAttributes.FertilizerUsageMod;
+			usageAttribute = gameObject.GetAttributes().Get(attribute);
+			usage = new AttributeModifier(attribute.Id, 0f, ONIGASMIX.PLANTS.CARBON_DIOXIDE_MODIFIER, is_multiplier: true, is_readonly: false);
+			usageAttribute?.Add(usage);
 			Sim1000ms(0f);
+		}
+
+		public override void OnCleanUp()
+		{
+			Ferns.Remove(plant);
+			usageAttribute?.Remove(usage);
+			base.OnCleanUp();
 		}
 
 		public void Sim1000ms(float dt)
 		{
 			CarbonDioxide = GasLayerPlants.PartialAround(gameObject, SimHashes.CarbonDioxide, out _);
 			Rate = Mathf.Clamp01((CarbonDioxide - From) / (Full - From));
-			// The game's own rate (wild or planted), then this share of it.
+			// The intake at the full rate: the game's for a wild fern, by the Water for a planted one; then this share of it.
 			fern.SetConsumptionRate();
+			if (receptacle.Replanted)
+			{
+				consumer.consumptionRate = PlantedIntake();
+			}
 			float rate = consumer.consumptionRate * Rate;
 			consumer.consumptionRate = rate;
 			if (Mathf.Abs(rate - applied) > applied * 0.01f + 1e-9f)
@@ -349,12 +374,58 @@ namespace OniGasMix
 				applied = rate;
 				consumer.RefreshConsumptionRate();
 			}
-			bool show = Rate < 0.995f && status != null;
-			if (show != shown && selectable != null)
+			// Water and Dirt: the attribute with this share, then the absorbers by it.
+			usage?.SetValue(Rate - 1f);
+			float total = usageAttribute != null ? usageAttribute.GetTotalValue() : Rate;
+			IrrigationMonitor.Instance irrigation = gameObject.GetSMI<IrrigationMonitor.Instance>();
+			if (irrigation != null)
 			{
-				shown = show;
-				selectable.ToggleStatusItem(status, show, this);
+				Scale(IrrigationHandle(irrigation), irrigation.def.consumedElements, total);
 			}
+			FertilizationMonitor.Instance fertilizer = gameObject.GetSMI<FertilizationMonitor.Instance>();
+			if (fertilizer != null && fertilizer.def.consumedElements != null)
+			{
+				PlantElementAbsorber.ConsumeInfo[] own = FertilizerElements(fertilizer);
+				for (int i = 0; own != null && i < own.Length && i < fertilizer.def.consumedElements.Length; i++)
+				{
+					own[i].massConsumptionRate = fertilizer.def.consumedElements[i].massConsumptionRate * total;
+				}
+				Scale(FertilizerHandle(fertilizer), fertilizer.def.consumedElements, total);
+			}
+		}
+
+		/// <summary>
+		/// A planted fern's intake of Carbon Dioxide at the full rate, kg/s: as much as gives OxygenPerWater of its Water by
+		/// the game's converter (OxyfernConfig.OXYGEN_RATE for GameIntake).
+		/// </summary>
+		internal float PlantedIntake()
+		{
+			IrrigationMonitor.Instance irrigation = gameObject.GetSMI<IrrigationMonitor.Instance>();
+			float water = irrigation?.def.consumedElements != null && irrigation.def.consumedElements.Length > 0
+				? irrigation.def.consumedElements[0].massConsumptionRate : GameWater;
+			return OxygenPerWater * water * GameIntake / OxyfernConfig.OXYGEN_RATE;
+		}
+
+		private static void Scale(HandleVector<int>.Handle handle, PlantElementAbsorber.ConsumeInfo[] game, float total)
+		{
+			if (!handle.IsValid() || game == null || game.Length == 0)
+			{
+				return;
+			}
+			PlantElementAbsorbers absorbers = Game.Instance.plantElementAbsorbers;
+			PlantElementAbsorber absorber = absorbers.GetData(handle);
+			if (absorber.consumedElements == null)
+			{
+				absorber.localInfo.massConsumptionRate = game[0].massConsumptionRate * total;
+			}
+			else
+			{
+				for (int i = 0; i < absorber.consumedElements.Length && i < game.Length; i++)
+				{
+					absorber.consumedElements[i].massConsumptionRate = game[i].massConsumptionRate * total;
+				}
+			}
+			absorbers.SetData(handle, absorber);
 		}
 	}
 }
