@@ -241,6 +241,43 @@ namespace OniLight
 								}
 							}
 							Expect("no port icons in the dark (the power overlay)", visualizer != null && ports > 0 && drawn == 0, $"the dark lamp's ports {ports}, icons drawn {drawn}");
+							// Whatever the power overlay highlights (its target sets): nothing in a cell the player sees nothing in.
+							int targets = 0, inDark = 0;
+							object mode = AccessTools.Field(typeof(OverlayScreen), "currentModeInfo").GetValue(OverlayScreen.Instance);
+							object overlay = mode != null ? AccessTools.Field(mode.GetType(), "mode").GetValue(mode) : null;
+							for (Type t = overlay?.GetType(); t != null && t != typeof(object); t = t.BaseType)
+							{
+								foreach (System.Reflection.FieldInfo f in t.GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.DeclaredOnly))
+								{
+									// What the overlay brings forward (its highlighted layer); the other sets are its bookkeeping.
+									if (f.Name != "layerTargets" || !(f.GetValue(overlay) is System.Collections.IEnumerable set)) continue;
+									foreach (object item in set)
+									{
+										if (!(item is KMonoBehaviour k) || k == null) continue;
+										targets++;
+										if (Darkness.Hidden(k.gameObject))
+										{
+											inDark++;
+											Grid.CellToXY(Grid.PosToCell(k), out int hx, out int hy);
+											Debug.Log($"{ModContext.Tag} LightCases: highlighted in the dark by the power overlay: {k.GetProperName()} ({k.GetType().Name}) at {hx},{hy}, in {f.Name}, Grid.Visible {Grid.Visible[Grid.PosToCell(k)]}");
+										}
+									}
+								}
+							}
+							// Its labels (watts, battery charge): none shown for something in the dark.
+							int labels = 0, labelsInDark = 0;
+							if (overlay is OverlayModes.Power power)
+							{
+								foreach (var info in power.updatePowerInfo)
+								{
+									if (info.item == null || info.powerLabel == null || !info.powerLabel.gameObject.activeInHierarchy) continue;
+									labels++;
+									if (Darkness.Hidden(info.item.gameObject)) labelsInDark++;
+								}
+							}
+							inDark += labelsInDark;
+							Debug.Log($"{ModContext.Tag} LightCases: power labels shown {labels}, of them in the dark {labelsInDark}");
+							Expect("nothing highlighted in the dark (the power overlay)", overlay != null && inDark == 0, $"highlighted {targets}, of them in the dark {inDark}; dark cells hidden from overlay updates {Darkness.OverlayCellsHidden}");
 						}
 						else if (frame == 176)
 						{

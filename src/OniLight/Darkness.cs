@@ -66,6 +66,22 @@ namespace OniLight
 			// Not patched: OverlayModes.Mode.AddTargetIfVisible<T> (it reads the explored state itself). A patch of a generic method
 			// replaces the code all reference types share with one typed for a single T, and the other overlays then crash with
 			// an invalid cast (the crop overlay did). Objects brought forward in an overlay are drawn under the fog anyway.
+			// The overlays pick what they highlight (pipes, wires, plants, buildings, their labels) by the game's explored state
+			// read straight from Grid.Visible: while an overlay updates, the dark cells in view read as unexplored.
+			harmony.Patch(AccessTools.Method(typeof(OverlayScreen), "LateUpdate"), prefix: new HarmonyMethod(typeof(Darkness), nameof(HideDarkFromOverlay)),
+				finalizer: new HarmonyMethod(typeof(Darkness), nameof(DarkBackForOverlay)));
+			// The power overlay's labels (watts of each consumer and generator, the charge of each battery) are put up for
+			// whatever is in view, explored or not: not shown in the dark.
+			harmony.Patch(AccessTools.Method(typeof(OverlayModes.Power), nameof(OverlayModes.Power.Update)), postfix: new HarmonyMethod(typeof(Darkness), nameof(NoPowerLabelsInTheDark)));
+			// The germ overlay's widgets on Duplicants and icons of germ sources are put up for all in view: not in the dark.
+			harmony.Patch(AccessTools.Method(typeof(OverlayModes.Disease), nameof(OverlayModes.Disease.Update)), postfix: new HarmonyMethod(typeof(Darkness), nameof(NoGermWidgetsInTheDark)));
+			// What flows in pipes and on conveyors, drawn over the world in the overlays: not in the dark.
+			foreach (Type visualizer in new[] { typeof(ConduitFlowVisualizer), typeof(SolidConduitFlowVisualizer) })
+			{
+				Type mesh = AccessTools.Inner(visualizer, "ConduitFlowMesh");
+				MethodInfo addQuad = mesh != null ? AccessTools.Method(mesh, "AddQuad") : null;
+				if (addQuad != null) harmony.Patch(addQuad, prefix: new HarmonyMethod(typeof(Darkness), nameof(NoFlowInTheDark)));
+			}
 			// The icons of a building's ports in the overlays (pipes, wires, heat sources and sinks): not in the dark.
 			harmony.Patch(AccessTools.Method(typeof(EntityCellVisualizer), nameof(EntityCellVisualizer.DrawIcons)), prefix: new HarmonyMethod(typeof(Darkness), nameof(NoPortIconsInTheDark)));
 			// Orders only where there is some light.
@@ -138,6 +154,104 @@ namespace OniLight
 			{
 				__result = false;
 			}
+		}
+
+		// The cells in view made to read as unexplored for an overlay's update, and what they held.
+		private static readonly List<int> hiddenCells = new List<int>();
+		private static readonly List<byte> hiddenValues = new List<byte>();
+		internal static long OverlayCellsHidden;
+
+		private static void HideDarkFromOverlay()
+		{
+			if (shown == null || OverlayScreen.Instance == null || OverlayScreen.Instance.GetMode() == OverlayModes.None.ID)
+			{
+				return;
+			}
+			Grid.GetVisibleExtents(out int minX, out int minY, out int maxX, out int maxY);
+			byte[] visible = Grid.Visible;
+			for (int y = Math.Max(minY - 2, 0); y <= Math.Min(maxY + 2, Grid.HeightInCells - 1); y++)
+			{
+				for (int x = Math.Max(minX - 2, 0); x <= Math.Min(maxX + 2, Grid.WidthInCells - 1); x++)
+				{
+					int cell = Grid.XYToCell(x, y);
+					if (visible[cell] > 0 && shown[cell] == 0)
+					{
+						hiddenCells.Add(cell);
+						hiddenValues.Add(visible[cell]);
+						visible[cell] = 0;
+					}
+				}
+			}
+			OverlayCellsHidden += hiddenCells.Count;
+		}
+
+		private static Exception DarkBackForOverlay(Exception __exception)
+		{
+			byte[] visible = Grid.Visible;
+			for (int i = 0; i < hiddenCells.Count; i++)
+			{
+				visible[hiddenCells[i]] = hiddenValues[i];
+			}
+			hiddenCells.Clear();
+			hiddenValues.Clear();
+			return __exception;
+		}
+
+		private static void NoPowerLabelsInTheDark(OverlayModes.Power __instance)
+		{
+			if (shown == null)
+			{
+				return;
+			}
+			foreach (var info in __instance.updatePowerInfo)
+			{
+				bool show = info.item != null && !Hidden(info.item.gameObject);
+				if (info.powerLabel != null && info.powerLabel.gameObject.activeSelf != show) info.powerLabel.gameObject.SetActive(show);
+			}
+			foreach (var info in __instance.updateBatteryInfo)
+			{
+				bool show = info.battery != null && !Hidden(info.battery.gameObject);
+				if (info.ui != null && info.ui.gameObject.activeSelf != show) info.ui.gameObject.SetActive(show);
+			}
+		}
+
+		private static readonly HashSet<DiseaseSourceVisualizer> germIconsHidden = new HashSet<DiseaseSourceVisualizer>();
+
+		private static void NoGermWidgetsInTheDark(OverlayModes.Disease __instance)
+		{
+			if (shown == null)
+			{
+				return;
+			}
+			foreach (var info in __instance.updateDiseaseInfo)
+			{
+				GameObject owner = info.valueSrc?.gameObject;
+				bool show = owner != null && !Hidden(owner);
+				if (info.ui != null && info.ui.gameObject.activeSelf != show) info.ui.gameObject.SetActive(show);
+			}
+			foreach (DiseaseSourceVisualizer source in Components.DiseaseSourceVisualizers.Items)
+			{
+				if (source == null || source.visualizer == null)
+				{
+					continue;
+				}
+				bool hidden = Hidden(source.gameObject);
+				if (hidden && source.visualizer.activeSelf)
+				{
+					source.visualizer.SetActive(false);
+					germIconsHidden.Add(source);
+				}
+				else if (!hidden && germIconsHidden.Remove(source))
+				{
+					source.Show(OverlayModes.Disease.ID);
+				}
+			}
+		}
+
+		/// <summary>A blob of what flows in a pipe or on a conveyor (at a cell's coordinates): not drawn in the dark.</summary>
+		private static bool NoFlowInTheDark(Vector2 pos)
+		{
+			return shown == null || !Dark(Grid.XYToCell(Mathf.RoundToInt(pos.x), Mathf.RoundToInt(pos.y)));
 		}
 
 		/// <summary>Whether the player sees nothing in any cell of an object.</summary>
