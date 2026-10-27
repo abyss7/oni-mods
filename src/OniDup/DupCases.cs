@@ -31,7 +31,9 @@ namespace OniDup
 	{
 		private const int Rooms = 30, RoomsPerRow = 6, RoomWidth = 5, RoomHeight = 3;
 		private const int SiteWidth = 1 + RoomsPerRow * (RoomWidth + 1), SiteHeight = 1 + (Rooms + RoomsPerRow - 1) / RoomsPerRow * (RoomHeight + 1);
-		private const float Warm = 300f, AirMass = 1.8f, StartAfter = 8f;
+		private const float Warm = 300f, StartAfter = 8f;
+		/// <summary>Oxygen at one atmosphere, by the pressure scale in use (with the pressure mod 1.8 kg is not 101 kPa).</summary>
+		private static float AirMass => MassFor(SimHashes.Oxygen, 101.325f);
 		private const int Normal = 0, Stuffy = 1, Headache = 2, Poisoning = 3, PassingOut = 4, Thin = 5, Lightheaded = 6, Gasping = 7, NoOxygen = 8,
 			Vacuum = 9, Toxic = 10, Drop = 11, Waist = 12, Head = 13, DigOnTheWay = 14, DigAtWork = 15,
 			MaskPoorAir = 16, MaskCarbon = 17, MaskVacuum = 18, AtmoSuit = 19, JetSuit = 20, LeadSuit = 21, UnderWater = 22, AirSupply = 23, Bionic = 24,
@@ -718,8 +720,35 @@ namespace OniDup
 			}
 		}
 
+		private static readonly Dictionary<int, float> topUps = new Dictionary<int, float>();
+
+		/// <summary>
+		/// A small closed room loses the air a Duplicant breathes (100 g/s): over minutes that is a large share of it. The
+		/// room's Oxygen is put back to its mass every few seconds while a scene needs the air to stay as it was.
+		/// </summary>
+		private static void KeepAir(int room, float t, float every, IEnumerable<int> cells, float mass)
+		{
+			if (topUps.TryGetValue(room, out float last) && t < last + every)
+			{
+				return;
+			}
+			topUps[room] = t;
+			foreach (int cell in cells)
+			{
+				if (Grid.IsValidCell(cell) && Grid.Element[cell].IsGas && Grid.Mass[cell] < mass) Set(cell, SimHashes.Oxygen, mass);
+			}
+		}
+
+		private static IEnumerable<int> RoomGasCells(int room)
+		{
+			var cells = new List<int>();
+			ForRoom(room, (cell, dx, dy) => cells.Add(cell));
+			return cells;
+		}
+
 		private static void ToxicScene(int room, float t, GameObject dupe, DupAirMonitor air)
 		{
+			KeepAir(room, t, 5f, RoomGasCells(room), MassFor(SimHashes.Oxygen, ToxicAtm * 101.325f));
 			bool now = dupe.GetComponent<Effects>().HasEffect(DupAir.SeizureId);
 			if (now && !seizing)
 			{
@@ -776,6 +805,12 @@ namespace OniDup
 				notes["breach-health" + room] = health.hitPoints;
 			}
 			bool dug = room == TunnelDig ? !Grid.Solid[RoomCell(room, 3, 0)] && !Grid.Solid[RoomCell(room, 3, 1)] : !Grid.Solid[RoomCell(room, 3, 0)];
+			// Two cells of air last a breathing Duplicant half a minute: kept until the dig opens the wall (the scene is
+			// about the dig, not about running out of air), then left alone.
+			if (!dug)
+			{
+				KeepAir(room, t, 1f, new[] { RoomCell(room, 4, 0), RoomCell(room, 4, 1) }, AirMass);
+			}
 			if (dug && !notes.ContainsKey("breach-dug" + room))
 			{
 				notes["breach-dug" + room] = t;
@@ -807,7 +842,10 @@ namespace OniDup
 			int cell = Grid.PosToCell(dupe);
 			if (t >= 4f && !notes.ContainsKey(key))
 			{
-				// Where the Duplicant stands now: they may have walked about since they appeared.
+				// Where the Duplicant stands now: they may have walked about since they appeared; held there for the burying (at
+				// the game's highest speed a step may be under way between two checks).
+				dupe.GetComponent<Navigator>()?.Stop();
+				dupe.transform.SetPosition(Grid.CellToPosCBC(cell, Grid.SceneLayer.Move));
 				notes[key] = cell;
 				Set(room == Waist ? cell : Grid.CellAbove(cell), SimHashes.Katairite, 1000f);
 				return;
@@ -923,8 +961,10 @@ namespace OniDup
 		{
 			KSelectable selectable = dupe.GetComponent<KSelectable>();
 			DupAirMonitor air = dupe.GetComponent<DupAirMonitor>();
-			StatusItem shown = AirStatuses.FirstOrDefault(selectable.HasStatusItem);
-			return shown == null ? "status none" : $"status {shown.Name}: {air.Explain(shown.tooltipText).Replace("\n", " ")}";
+			var shownAll = AirStatuses.Where(selectable.HasStatusItem).ToList();
+			if (shownAll.Count == 0) return "status none";
+			StatusItem shown = shownAll[0];
+			return $"status {string.Join(" + ", shownAll.Select(x => x.Id))}: {air.Explain(shown.tooltipText).Replace("\n", " ")}";
 		}
 
 		private static Death DeathOf(GameObject dupe)

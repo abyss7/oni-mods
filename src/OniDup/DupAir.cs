@@ -208,7 +208,7 @@ namespace OniDup
 
 			string name = ONIDUP.EFFECTS.HYPOXIA.NAME;
 			// No floating text: at a zone boundary the effect can come and go as the duplicant walks.
-			var hypoxia = new Effect(HypoxiaId, name, ONIDUP.EFFECTS.HYPOXIA.TOOLTIP, 0f, true, false, true);
+			var hypoxia = new Effect(HypoxiaId, name, ONIDUP.EFFECTS.HYPOXIA.TOOLTIP, 0f, false, false, true);
 			hypoxia.Add(new AttributeModifier(stress, 15f / 600f, name));
 			hypoxia.Add(new AttributeModifier(attributes.Athletics.Id, -4f, name));
 			hypoxia.Add(new AttributeModifier(attributes.Learning.Id, -3f, name));
@@ -219,7 +219,7 @@ namespace OniDup
 			Db.Get().effects.Add(hypoxia);
 
 			name = ONIDUP.EFFECTS.SEVEREHYPOXIA.NAME;
-			var severe = new Effect(SevereHypoxiaId, name, ONIDUP.EFFECTS.SEVEREHYPOXIA.TOOLTIP, 0f, true, false, true, Db.Get().Emotes.Minion.Cough, 20f);
+			var severe = new Effect(SevereHypoxiaId, name, ONIDUP.EFFECTS.SEVEREHYPOXIA.TOOLTIP, 0f, false, false, true, Db.Get().Emotes.Minion.Cough, 20f);
 			severe.Add(new AttributeModifier(stress, 30f / 600f, name));
 			severe.Add(new AttributeModifier(attributes.Athletics.Id, -8f, name));
 			severe.Add(new AttributeModifier(attributes.Learning.Id, -4f, name));
@@ -229,30 +229,30 @@ namespace OniDup
 			}
 			Db.Get().effects.Add(severe);
 
-			Db.Get().effects.Add(new Effect(EbullismId, ONIDUP.EFFECTS.EBULLISM.NAME, ONIDUP.EFFECTS.EBULLISM.TOOLTIP, 0f, true, false, true));
+			Db.Get().effects.Add(new Effect(EbullismId, ONIDUP.EFFECTS.EBULLISM.NAME, ONIDUP.EFFECTS.EBULLISM.TOOLTIP, 0f, false, false, true));
 
 			// Barotrauma: the game's "Popped Eardrums" is about over-pressure; the same numbers and reaction, with its own text.
 			name = ONIDUP.EFFECTS.BAROTRAUMA.NAME;
-			var barotrauma = new Effect(BarotraumaId, name, ONIDUP.EFFECTS.BAROTRAUMA.TOOLTIP, 300f, true, true, true, "anim_react_popped_ears_kanim", -1f);
+			var barotrauma = new Effect(BarotraumaId, name, ONIDUP.EFFECTS.BAROTRAUMA.TOOLTIP, 300f, false, true, true, "anim_react_popped_ears_kanim", -1f);
 			barotrauma.Add(new AttributeModifier(stress, 20f / 600f, name));
 			Db.Get().effects.Add(barotrauma);
 			name = ONIDUP.EFFECTS.POPPEDEARS.NAME;
-			var ears = new Effect(PoppedEarsId, name, ONIDUP.EFFECTS.POPPEDEARS.TOOLTIP, 150f, true, true, true, "anim_react_popped_ears_kanim", -1f);
+			var ears = new Effect(PoppedEarsId, name, ONIDUP.EFFECTS.POPPEDEARS.TOOLTIP, 150f, false, true, true, "anim_react_popped_ears_kanim", -1f);
 			ears.Add(new AttributeModifier(stress, 5f / 600f, name));
 			Db.Get().effects.Add(ears);
 
-			VacuumStatus = AirStatus("OniDupVacuum", ONIDUP.STATUSITEMS.VACUUM.NAME, ONIDUP.STATUSITEMS.VACUUM.TOOLTIP, NotificationType.DuplicantThreatening);
-			CarbonDioxideOutStatus = AirStatus("OniDupCarbonDioxideOut", ONIDUP.STATUSITEMS.CO2PASSINGOUT.NAME, ONIDUP.STATUSITEMS.CO2PASSINGOUT.TOOLTIP, NotificationType.DuplicantThreatening);
-			NoOxygenStatus = AirStatus("OniDupNoOxygen", ONIDUP.STATUSITEMS.NOOXYGEN.NAME, ONIDUP.STATUSITEMS.NOOXYGEN.TOOLTIP, NotificationType.DuplicantThreatening);
-			BuriedStatus = AirStatus("OniDupBuriedHead", ONIDUP.STATUSITEMS.BURIED.NAME, ONIDUP.STATUSITEMS.BURIED.TOOLTIP, NotificationType.DuplicantThreatening);
-			GaspingStatus = AirStatus("OniDupGasping", ONIDUP.STATUSITEMS.GASPING.NAME, ONIDUP.STATUSITEMS.GASPING.TOOLTIP, NotificationType.DuplicantThreatening);
-			PoisoningStatus = AirStatus("OniDupCarbonDioxidePoisoning", ONIDUP.STATUSITEMS.CO2POISONING.NAME, ONIDUP.STATUSITEMS.CO2POISONING.TOOLTIP, NotificationType.Bad);
-			HypoxiaStatus = AirStatus("OniDupHypoxia", ONIDUP.STATUSITEMS.HYPOXIA.NAME, ONIDUP.STATUSITEMS.HYPOXIA.TOOLTIP, NotificationType.Bad);
-			HeadacheStatus = AirStatus("OniDupCarbonDioxideHeadache", ONIDUP.STATUSITEMS.CO2HEADACHE.NAME, ONIDUP.STATUSITEMS.CO2HEADACHE.TOOLTIP, NotificationType.BadMinor);
-			ToxicityStatus = AirStatus("OniDupOxygenToxicity", ONIDUP.STATUSITEMS.OXYGENTOXICITY.NAME, ONIDUP.STATUSITEMS.OXYGENTOXICITY.TOOLTIP, NotificationType.Bad);
-			StuffyStatus = AirStatus("OniDupStuffyAir", ONIDUP.STATUSITEMS.STUFFYAIR.NAME, ONIDUP.STATUSITEMS.STUFFYAIR.TOOLTIP, NotificationType.BadMinor);
-			DecompressionStatus = AirStatus("OniDupDecompression", ONIDUP.STATUSITEMS.DECOMPRESSION.NAME, ONIDUP.STATUSITEMS.DECOMPRESSION.TOOLTIP, NotificationType.Bad);
-			PoppedEarsStatus = AirStatus("OniDupPoppedEars", ONIDUP.STATUSITEMS.POPPEDEARS.NAME, ONIDUP.STATUSITEMS.POPPEDEARS.TOOLTIP, NotificationType.BadMinor);
+			VacuumStatus = AirStatus("OniDupAirVacuum", ONIDUP.STATUSITEMS.VACUUM.NAME, ONIDUP.STATUSITEMS.VACUUM.TOOLTIP, NotificationType.DuplicantThreatening);
+			CarbonDioxideOutStatus = AirStatus("OniDupAirCarbonDioxideOut", ONIDUP.STATUSITEMS.CO2PASSINGOUT.NAME, ONIDUP.STATUSITEMS.CO2PASSINGOUT.TOOLTIP, NotificationType.DuplicantThreatening);
+			NoOxygenStatus = AirStatus("OniDupAirNoOxygen", ONIDUP.STATUSITEMS.NOOXYGEN.NAME, ONIDUP.STATUSITEMS.NOOXYGEN.TOOLTIP, NotificationType.DuplicantThreatening);
+			BuriedStatus = AirStatus("OniDupAirBuriedHead", ONIDUP.STATUSITEMS.BURIED.NAME, ONIDUP.STATUSITEMS.BURIED.TOOLTIP, NotificationType.DuplicantThreatening);
+			GaspingStatus = AirStatus("OniDupAirGasping", ONIDUP.STATUSITEMS.GASPING.NAME, ONIDUP.STATUSITEMS.GASPING.TOOLTIP, NotificationType.DuplicantThreatening);
+			PoisoningStatus = AirStatus("OniDupAirCarbonDioxidePoisoning", ONIDUP.STATUSITEMS.CO2POISONING.NAME, ONIDUP.STATUSITEMS.CO2POISONING.TOOLTIP, NotificationType.Bad);
+			HypoxiaStatus = AirStatus("OniDupAirHypoxia", ONIDUP.STATUSITEMS.HYPOXIA.NAME, ONIDUP.STATUSITEMS.HYPOXIA.TOOLTIP, NotificationType.Bad);
+			HeadacheStatus = AirStatus("OniDupAirCarbonDioxideHeadache", ONIDUP.STATUSITEMS.CO2HEADACHE.NAME, ONIDUP.STATUSITEMS.CO2HEADACHE.TOOLTIP, NotificationType.BadMinor);
+			ToxicityStatus = AirStatus("OniDupAirOxygenToxicity", ONIDUP.STATUSITEMS.OXYGENTOXICITY.NAME, ONIDUP.STATUSITEMS.OXYGENTOXICITY.TOOLTIP, NotificationType.Bad);
+			StuffyStatus = AirStatus("OniDupAirStuffyAir", ONIDUP.STATUSITEMS.STUFFYAIR.NAME, ONIDUP.STATUSITEMS.STUFFYAIR.TOOLTIP, NotificationType.BadMinor);
+			DecompressionStatus = AirStatus("OniDupAirDecompression", ONIDUP.STATUSITEMS.DECOMPRESSION.NAME, ONIDUP.STATUSITEMS.DECOMPRESSION.TOOLTIP, NotificationType.Bad);
+			PoppedEarsStatus = AirStatus("OniDupAirPoppedEars", ONIDUP.STATUSITEMS.POPPEDEARS.NAME, ONIDUP.STATUSITEMS.POPPEDEARS.TOOLTIP, NotificationType.BadMinor);
 			Decompression = new Death("OniDupDecompression", Db.Get().Deaths, ONIDUP.DEATHS.DECOMPRESSION.NAME, ONIDUP.DEATHS.DECOMPRESSION.DESCRIPTION,
 				"death_suffocation", "dead_on_back");
 			CarbonDioxide = new Death("OniDupCarbonDioxide", Db.Get().Deaths, ONIDUP.DEATHS.CARBONDIOXIDE.NAME, ONIDUP.DEATHS.CARBONDIOXIDE.DESCRIPTION,
@@ -260,13 +260,13 @@ namespace OniDup
 
 			// Carbon Dioxide: stuffy air, a headache, poisoning.
 			name = ONIDUP.EFFECTS.STUFFYAIR.NAME;
-			var stuffy = new Effect(StuffyId, name, ONIDUP.EFFECTS.STUFFYAIR.TOOLTIP, 0f, true, false, true);
+			var stuffy = new Effect(StuffyId, name, ONIDUP.EFFECTS.STUFFYAIR.TOOLTIP, 0f, false, false, true);
 			stuffy.Add(new AttributeModifier(stress, 5f / 600f, name));
 			stuffy.Add(new AttributeModifier(attributes.Learning.Id, -2f, name));
 			Db.Get().effects.Add(stuffy);
 
 			name = ONIDUP.EFFECTS.CO2HEADACHE.NAME;
-			var headache = new Effect(HeadacheId, name, ONIDUP.EFFECTS.CO2HEADACHE.TOOLTIP, 0f, true, false, true);
+			var headache = new Effect(HeadacheId, name, ONIDUP.EFFECTS.CO2HEADACHE.TOOLTIP, 0f, false, false, true);
 			headache.Add(new AttributeModifier(stress, 15f / 600f, name));
 			headache.Add(new AttributeModifier(attributes.Learning.Id, -3f, name));
 			foreach (Klei.AI.Attribute attribute in work)
@@ -276,7 +276,7 @@ namespace OniDup
 			Db.Get().effects.Add(headache);
 
 			name = ONIDUP.EFFECTS.CO2POISONING.NAME;
-			var poisoning = new Effect(PoisoningId, name, ONIDUP.EFFECTS.CO2POISONING.TOOLTIP, 0f, true, false, true, Db.Get().Emotes.Minion.Cough, 20f);
+			var poisoning = new Effect(PoisoningId, name, ONIDUP.EFFECTS.CO2POISONING.TOOLTIP, 0f, false, false, true, Db.Get().Emotes.Minion.Cough, 20f);
 			poisoning.Add(new AttributeModifier(stress, 25f / 600f, name));
 			poisoning.Add(new AttributeModifier(attributes.Athletics.Id, -5f, name));
 			poisoning.Add(new AttributeModifier(attributes.Learning.Id, -4f, name));
@@ -288,7 +288,7 @@ namespace OniDup
 
 			// Too much Oxygen: toxicity after half a cycle, seizures at the highest pressures.
 			name = ONIDUP.EFFECTS.OXYGENTOXICITY.NAME;
-			var toxicity = new Effect(ToxicityId, name, ONIDUP.EFFECTS.OXYGENTOXICITY.TOOLTIP, 0f, true, true, true);
+			var toxicity = new Effect(ToxicityId, name, ONIDUP.EFFECTS.OXYGENTOXICITY.TOOLTIP, 0f, false, true, true);
 			toxicity.Add(new AttributeModifier(stress, 10f / 600f, name));
 			toxicity.Add(new AttributeModifier(attributes.Athletics.Id, -3f, name));
 			Db.Get().effects.Add(toxicity);
@@ -303,6 +303,9 @@ namespace OniDup
 		/// A status item of the air with the numbers of the duplicant's air in its tooltip; an icon over the head only for what
 		/// threatens their life.
 		/// </summary>
+		// The status ids differ from the effects' ids: the game tells status items apart by id (an effect shown in the list is a
+		// status item named by the effect), and the same id made one hide or double the other. The effects that a status
+		// item stands for are not listed themselves (their penalties still show in the attributes' tooltips).
 		private static StatusItem AirStatus(string id, string name, string tooltip, NotificationType type)
 		{
 			bool threat = type == NotificationType.DuplicantThreatening;
@@ -607,6 +610,7 @@ namespace OniDup
 		private System.Guid airStatus, injuryStatus;
 		private StatusItem airShown, injuryShown;
 		private float decompressionFrom, decompressionTo, decompressionDamage;
+		private bool earsOnly;
 		/// <summary>The last decompression: the pressure before and after (kPa) and the damage done (for the self-check).</summary>
 		internal float DecompressionFrom => decompressionFrom;
 		internal float DecompressionTo => decompressionTo;
@@ -842,6 +846,26 @@ namespace OniDup
 			history[historyAt] = AmbientPressure(now);
 			historyAt = (historyAt + 1) % HistorySamples;
 			historyCount = Math.Min(historyCount + 1, HistorySamples);
+			// A breach empties the air over a few seconds: popped ears at the first of the drop become an injury if, within
+			// the cooldown, the pressure goes on falling far enough from where it was (the whole drop decides, not its start).
+			if (earsOnly && now - lastDecompression < DecompressionCooldown && historyCount >= RecentSamples)
+			{
+				// The pressure kept for the last 1.2 s (the highest of it): a passing dip does not count, as above.
+				float latest = 0f;
+				for (int i = 0; i < RecentSamples; i++) latest = Mathf.Max(latest, history[(historyAt - 1 - i + HistorySamples) % HistorySamples]);
+				float fullRatio = decompressionFrom / Mathf.Max(latest, 0.1f);
+				if (fullRatio >= InjuryRatio && latest < InjuryBelow && decompressionFrom - latest >= DecompressionDrop)
+				{
+					earsOnly = false;
+					decompressionTo = latest;
+					decompressionDamage = Mathf.Clamp(5f * Mathf.Log(fullRatio / 2f, 2f), 5f, 20f);
+					Debug.Log($"{ModContext.Tag} air: {gameObject.GetProperName()}: the drop went on to {latest:F0} kPa ({fullRatio:F1} times from {decompressionFrom:F0}): " +
+						$"decompression injury, {decompressionDamage:F1} damage");
+					effects?.Remove(DupAir.PoppedEarsId);
+					effects?.Add(DupAir.BarotraumaId, true);
+					health?.Damage(decompressionDamage);
+				}
+			}
 			if (historyCount <= RecentSamples || now - lastDecompression < DecompressionCooldown)
 			{
 				return;
@@ -867,6 +891,7 @@ namespace OniDup
 			decompressionDamage = injury ? Mathf.Clamp(5f * Mathf.Log(ratio / 2f, 2f), 5f, 20f) : 0f;
 			Debug.Log($"{ModContext.Tag} air: {gameObject.GetProperName()} at {Grid.PosToXY(transform.GetPosition())}: pressure {before:F0} -> {current:F0} kPa " +
 				$"({ratio:F1} times), {(injury ? $"decompression injury, {decompressionDamage:F1} damage" : "popped ears")}");
+			earsOnly = !injury;
 			if (injury)
 			{
 				effects?.Add(DupAir.BarotraumaId, true);
