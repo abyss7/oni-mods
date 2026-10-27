@@ -391,6 +391,8 @@ namespace OniDup
 				Debug.Log($"{ModContext.Tag} DupCases: {passed} of {Rooms - skipped} scenes passed{(skipped > 0 ? $", {skipped} skipped" : "")}; work fixes: moved while working {DupWork.escapes}, " +
 					$"swings finished early {DupWork.swings}, started work resumed {DupWork.resumes}, turned on the way {DupWork.rerouted}, " +
 					$"stopped working through a wall {DupWork.walls}");
+				// Done: the game is closed (a self-check run need not wait for its frames).
+				App.Quit();
 				phase = 6;
 			}
 		}

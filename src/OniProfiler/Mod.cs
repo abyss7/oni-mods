@@ -27,6 +27,7 @@ namespace OniProfiler
 			CritterProbe.Apply(harmony, path);
 			PlantProbe.Apply(harmony, path);
 			FetchProbe.Apply(harmony, path);
+			RunFast.Apply(harmony, path);
 			if (StagedCallbacks.Enabled)
 			{
 				HarmonyMethod remove = new HarmonyMethod(typeof(StagedCallbacks), nameof(StagedCallbacks.RemoveAll));
