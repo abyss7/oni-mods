@@ -34,6 +34,13 @@ namespace OniGasMix
 			public static LocString THRESHOLD_TOOLTIP = "Sends a <b><style=\"logic_on\">Green Signal</style></b> when the selected gas makes up at least <b>{0}%</b> of the molecules in the sensor's cell";
 		}
 
+		/// <summary>Plants and the air around them (GasLayerPlants.cs).</summary>
+		public static class PLANTS
+		{
+			public static LocString OXYFERN_INTAKE_NAME = "Short of Carbon Dioxide: {rate}";
+			public static LocString OXYFERN_INTAKE_TOOLTIP = "This plant takes in " + STRINGS.UI.PRE_KEYWORD + "Carbon Dioxide" + STRINGS.UI.PST_KEYWORD + " and gives " + STRINGS.UI.PRE_KEYWORD + "Oxygen" + STRINGS.UI.PST_KEYWORD + " at <b>{rate}</b> of its full rate: the air around it holds <b>{co2}</b> of Carbon Dioxide.\n\nIt works from {from} and at its full rate from {full}. It does not wilt for the lack of Carbon Dioxide.";
+		}
+
 		/// <summary>Mod settings (Options.cs): the settings window looks them up by the keys STRINGS.ONIGASMIX.OPTIONS.<setting>.NAME and .TOOLTIP.</summary>
 		public static class OPTIONS
 		{
