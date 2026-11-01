@@ -127,7 +127,7 @@ The game does not save tool modes and lists in overlay legends: after loading, "
 - the relative temperature slider position is saved by the game itself (`SaveGame.relativeTemperatureOverlaySliderValue`); only the overlay mode was lost, and without it the slider is not visible;
 - which overlay was open is not remembered.
 
-The data lives in the `UiSettingsState` component on the save object, as one JSON string; a save without the mod loads as usual (the game skips data of an unknown component). Self-check: the file `verify_ui_settings.txt` in the mod folder (with the word `set` it changes three settings and saves the game to `save_files/OniUiCheck/`, otherwise it logs the settings as they are in the game). Verified with two runs on 2026-10-12: the three changed settings and the modes of the other tools and overlays after loading are the same as written to the save.
+The data lives in the `UiSettingsState` component on the save object, as one JSON string; a save without the mod loads as usual (the game skips data of an unknown component). Self-check: the file `verify_ui_settings.txt` in the mod folder (with the word `set` it changes three settings and saves the game to `verify_ui_settings.sav` in the mod folder, otherwise it logs the settings as they are in the game). Verified with two runs on 2026-10-12: the three changed settings and the modes of the other tools and overlays after loading are the same as written to the save.
 
 ## The Printing Pod's choice in the save
 
@@ -138,7 +138,7 @@ The candidates a ready Printing Pod offers exist only on the selection screen: t
 - the order of the candidates in the row is kept;
 - a print that was taken, rejected or lost (nobody came for it, a quest took the pod) rolls anew, as in the game: everything ends in `Immigration.EndImmigration`, which clears the stored choice.
 
-The data lives in the `ImmigrantOffersState` component on the save object, as one JSON string, next to the game's own `Immigration` state; a save without the mod loads as usual. Self-check: the file `verify_immigrant_offers.txt` in the mod folder (with the word `set` it makes the pod ready, opens and closes the screen and saves the game to `save_files/OniPodCheck/`; otherwise that save is loaded, the screen is opened, the restored candidates are compared with the save and the first duplicant is delivered).
+The data lives in the `ImmigrantOffersState` component on the save object, as one JSON string, next to the game's own `Immigration` state; a save without the mod loads as usual. Self-check: the file `verify_immigrant_offers.txt` in the mod folder. The check save goes to the mod folder, never to the game's save folders (a save there shows up as a colony in the player's list). With the word `set` it makes the pod ready, opens and closes the screen and saves the game to `verify_immigrant_offers.sav` in the mod folder; otherwise that save is loaded, the screen is opened, the restored candidates are compared with the save and the first duplicant is delivered.
 
 ## Mod strings
 

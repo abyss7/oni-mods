@@ -78,10 +78,12 @@ namespace OniFixes
 
 		// Self-check: file verify_immigrant_offers.txt in the mod folder.
 		// - with the word "set": the pod is made ready, the screen is opened and closed, and the game is saved to
-		//   save_files/OniPodCheck/OniPodCheck.sav;
+		//   verify_immigrant_offers.sav in the mod folder;
 		// - with any other content: that save is loaded, the screen is opened and every restored candidate is compared
 		//   with the one in the save; the first duplicant is then delivered and the choice must be spent.
-		// Both runs write the verdict to the log and close the game.
+		// Both runs write the verdict to the log and close the game. The check save is written into the mod folder, not
+		// into the game's save folders: a save there shows up as a colony, and the game even moves it into the player's
+		// colony folder at startup (the colony name inside the save).
 		private const int OpenAtFrame = 600, CheckAtFrame = 720;
 		private static string verify;
 		private static int verifyFrame, verifyStep, minionsBefore;
@@ -460,7 +462,7 @@ namespace OniFixes
 					else
 					{
 						ImmigrantScreen.instance.Show(show: false);
-						string file = Path.Combine(SaveLoader.GetSavePrefix(), "OniPodCheck", "OniPodCheck.sav");
+						string file = Path.Combine(ModContext.Folder, "verify_immigrant_offers.sav");
 						SaveLoader.Instance.Save(file, isAutoSave: false, updateSavePointer: false);
 						Debug.Log($"[OniFixes] ImmigrantOffers verify: choice saved to {file}: {encoded}");
 					}

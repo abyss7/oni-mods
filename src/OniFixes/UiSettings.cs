@@ -111,7 +111,7 @@ namespace OniFixes
 						done.Add(mode.GetType().Name);
 					}
 				}
-				string file = Path.Combine(SaveLoader.GetSavePrefix(), "OniUiCheck", "OniUiCheck.sav");
+				string file = Path.Combine(ModContext.Folder, "verify_ui_settings.sav");
 				SaveLoader.Instance.Save(file, isAutoSave: false, updateSavePointer: false);
 				Debug.Log($"[OniFixes] UiSettings verify: changed {string.Join(", ", done)}; settings written to {file}: {Capture()}");
 			}
