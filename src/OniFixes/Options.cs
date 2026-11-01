@@ -68,6 +68,10 @@ namespace OniFixes
 		[JsonProperty]
 		public bool NearbyFetchByPath { get; set; } = true;
 
+		[Option(Key + "IMMIGRANTOFFERS.NAME", Key + "IMMIGRANTOFFERS.TOOLTIP", Key + "CATEGORY.DUPLICANTS")]
+		[JsonProperty]
+		public bool ImmigrantOffers { get; set; } = true;
+
 		[Option(Key + "DEMANDDRIVENFETCH.NAME", Key + "DEMANDDRIVENFETCH.TOOLTIP", Key + "CATEGORY.DUPLICANTS")]
 		[JsonProperty]
 		public bool DemandDrivenFetch { get; set; } = true;

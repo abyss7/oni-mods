@@ -129,6 +129,17 @@ The game does not save tool modes and lists in overlay legends: after loading, "
 
 The data lives in the `UiSettingsState` component on the save object, as one JSON string; a save without the mod loads as usual (the game skips data of an unknown component). Self-check: the file `verify_ui_settings.txt` in the mod folder (with the word `set` it changes three settings and saves the game to `save_files/OniUiCheck/`, otherwise it logs the settings as they are in the game). Verified with two runs on 2026-10-12: the three changed settings and the modes of the other tools and overlays after loading are the same as written to the save.
 
+## The Printing Pod's choice in the save
+
+The candidates a ready Printing Pod offers exist only on the selection screen: the game rolls them anew every time the screen is built, so saving and loading re-rolled a pending choice. The `ImmigrantOffers` fix ([src/OniFixes/ImmigrantOffers.cs](src/OniFixes/ImmigrantOffers.cs), on by default) writes the current choice to the save and rebuilds the screen from it while the same print is still pending:
+
+- a duplicant comes back with its personality, name (renames included), voice, traits, stress and joy reactions, aptitudes, starting levels and the chosen outfit;
+- a care package comes back with its kind and the facade it was given;
+- the order of the candidates in the row is kept;
+- a print that was taken, rejected or lost (nobody came for it, a quest took the pod) rolls anew, as in the game: everything ends in `Immigration.EndImmigration`, which clears the stored choice.
+
+The data lives in the `ImmigrantOffersState` component on the save object, as one JSON string, next to the game's own `Immigration` state; a save without the mod loads as usual. Self-check: the file `verify_immigrant_offers.txt` in the mod folder (with the word `set` it makes the pod ready, opens and closes the screen and saves the game to `save_files/OniPodCheck/`; otherwise that save is loaded, the screen is opened, the restored candidates are compared with the save and the first duplicant is delivered).
+
 ## Mod strings
 
 Everything a mod shows to the player is taken from the game's own strings where possible (gas names, units, words like "Mixture"): then the text comes in the game's language by itself. The mods have few strings of their own, and they work the same way as the game's strings:

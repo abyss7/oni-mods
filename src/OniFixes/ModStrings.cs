@@ -47,6 +47,12 @@ namespace OniFixes
 				public static LocString TOOLTIP = "A Duplicant fetching items picks up more of the same lying nearby in the same trip, but no longer one that is near only in a straight line while the walk to it is long (behind a floor or a wall).";
 			}
 
+			public static class IMMIGRANTOFFERS
+			{
+				public static LocString NAME = "Keep the Printing Pod's choice in the save";
+				public static LocString TOOLTIP = "The Duplicants and care packages a ready Printing Pod offers are written to the save: after loading, the same choice waits at the pod, and saving and loading no longer rerolls it. Taking, rejecting or losing the print rolls a new choice, as in the game. A save opened without the mod loads as usual.";
+			}
+
 			public static class OPENFLATDOORS
 			{
 				public static LocString NAME = "An open door laid flat is no floor";
