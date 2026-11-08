@@ -100,5 +100,9 @@ namespace OniFixes
 		[Option(Key + "ASYNCPROPERTYTEXTURES.NAME", Key + "ASYNCPROPERTYTEXTURES.TOOLTIP", Key + "CATEGORY.RENDERING")]
 		[JsonProperty]
 		public bool AsyncPropertyTextures { get; set; } = false;
+
+		[Option(Key + "FIXMRTCOPIES.NAME", Key + "FIXMRTCOPIES.TOOLTIP", Key + "CATEGORY.RENDERING")]
+		[JsonProperty]
+		public bool FixMrtCopies { get; set; } = true;
 	}
 }

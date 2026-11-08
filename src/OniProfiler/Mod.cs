@@ -192,6 +192,15 @@ namespace OniProfiler
 					Report.NativeProbeOnce = true;
 					continue;
 				}
+				// Before "@memory": StartsWith would otherwise take this line too.
+				if (line.StartsWith("@memory-watch"))
+				{
+					// A long-session watch for hunting an OOM: a "mem:" line with the counters every report window,
+					// full snapshots with a difference every N minutes (default 10).
+					string[] words = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+					MemoryReport.ConfigureWatch(words.Length > 1 && int.TryParse(words[1], out int minutes) && minutes > 0 ? minutes : 10);
+					continue;
+				}
 				if (line.StartsWith("@memory"))
 				{
 					MemoryReport.Enabled = true;
@@ -526,6 +535,23 @@ namespace OniProfiler
 		internal static void Init(string modPath)
 		{
 			FilePath = Path.Combine(modPath, "profile.log");
+			// The report file is rewritten from scratch every launch. The previous session's timeline must survive
+			// a relaunch (a session that died of an OOM is looked at afterwards), so it moves to profile-prev.log.
+			try
+			{
+				string previous = Path.Combine(modPath, "profile-prev.log");
+				if (File.Exists(previous))
+				{
+					File.Delete(previous);
+				}
+				if (File.Exists(FilePath))
+				{
+					File.Move(FilePath, previous);
+				}
+			}
+			catch (Exception)
+			{
+			}
 			File.WriteAllText(FilePath, $"# OniProfiler, session {System.DateTime.Now:yyyy-MM-dd HH:mm:ss}, build {BuildWatermark.GetBuildText()}\n");
 		}
 
@@ -597,6 +623,7 @@ namespace OniProfiler
 					NativeProbe.AppendOnce(sb);
 				}
 				MemoryReport.AppendOnce(sb);
+				MemoryReport.AppendWatch(sb);
 				// Cost of the report itself: it is written on the main thread, and the frame it happens in is longer than usual.
 				sb.AppendLine();
 				sb.AppendLine($"report built in {(Stopwatch.GetTimestamp() - reportStart) * 1000.0 / Stopwatch.Frequency:F1} ms (this frame is left out of the next window)");

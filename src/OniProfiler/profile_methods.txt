@@ -2,6 +2,18 @@
 # Format: Type:Method. All overloads are wrapped. Lines starting with # are ignored.
 # The file is read at game start, the mod does not need a rebuild to change the list.
 # Check new lines with a test run: a bad patch can crash the game at startup.
+#
+# Two lines switch on the memory sections of the report (counters, assets, managed roots):
+#   "@memory"          one full breakdown, once, after the first minute of the game;
+#   "@memory-watch N"  a watch for a long session (N minutes between full breakdowns, optional, 10 by default):
+#                      a "mem:" line with the counters in every report window, and every N minutes a full breakdown
+#                      with the difference to the previous one - which roots, textures and object counts grew.
+#                      Made for hunting an OOM: "process private" that grows while the managed counters stay flat
+#                      points to native code. Each full breakdown costs one long frame and is followed by a GC.
+#                      Near the end of the system memory (85%) a snapshot is taken at once, but a cheap one
+#                      (without the static-field walk, at most once in 5 minutes).
+#                      The file memory_now.txt in the mod folder forces a breakdown in the next report window.
+#                      The previous session's report survives a relaunch as profile-prev.log (profile.log is rewritten).
 
 # --- top level of the frame
 Game:Update

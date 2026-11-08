@@ -148,6 +148,12 @@ namespace OniFixes
 				public static LocString NAME = "Compute cell textures in background threads (experiment)";
 				public static LocString TOOLTIP = "Texture computation does not hold up the frame; the result is shown one frame later. On 4 cores the gain is about 1%; more cores were not tested.";
 			}
+
+			public static class FIXMRTCOPIES
+			{
+				public static LocString NAME = "Free the overlay render targets (fixes a leak)";
+				public static LocString TOOLTIP = "Every switch of an overlay mode recreates the screen-size render target copies, and the game frees only the old main textures, not the copies: at 4K each switch leaks 95-127 MB of render textures, gigabytes over a session - enough to kill a long game of out of memory. The old copies are freed here.";
+			}
 		}
 	}
 }

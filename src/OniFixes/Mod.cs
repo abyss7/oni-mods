@@ -28,6 +28,7 @@ namespace OniFixes
 				(nameof(ThrottlePropertyTextures), Options.ThrottlePropertyTextures, ThrottlePropertyTextures.Apply),
 				(nameof(NativePropertyTextures), Options.NativePropertyTextures, NativePropertyTextures.Apply),
 				(nameof(AsyncPropertyTextures), Options.AsyncPropertyTextures, AsyncPropertyTextures.Apply),
+				(nameof(MrtCopies), Options.FixMrtCopies, MrtCopies.Apply),
 				(nameof(DemandDrivenFetch), Options.DemandDrivenFetch, DemandDrivenFetch.Apply),
 				(nameof(CachedSymbolOverrides), Options.CachedSymbolOverrides, CachedSymbolOverrides.Apply),
 				(nameof(UiSettings), Options.RememberToolSettings, UiSettings.Apply),
