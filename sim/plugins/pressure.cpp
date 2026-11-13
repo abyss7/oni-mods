@@ -4,7 +4,12 @@
 // 1. Forbids the simulation its own transitions between liquid and gas (hook set "pressure").
 //    The simulation changes a cell's state by temperature alone: gas 3 degrees colder than the transition point
 //    becomes liquid entirely, hotter liquid becomes gas entirely (DoStateTransition), and liquid heavier than 5 kg
-//    next to a hot neighbour throws out 5 kg of gas (DoPartialHeatTransition). Under the phase rules gas colder than the
+//    next to a hot neighbour throws out 5 kg of gas (DoPartialHeatTransition). The same whole-cell normalization runs
+//    when a save is loaded (Sim::Load calls DoLoadTimeStateTransition for every cell), and it is forbidden for the same
+//    reason: a save made during play holds gas the rules keep over-saturated (a small cold cell cannot release even the
+//    smallest condensate portion: the latent heat of it warms the cell above saturation), and the load-time conversion
+//    would turn such cells into liquid all at once - "rain right after loading" (docs/backlog.md, item 36).
+//    Under the phase rules gas colder than the
 //    boiling point stays gas while there is less of it than the saturated vapour pressure holds, and liquid hotter than
 //    the boiling point stays liquid while gas presses on it. Other transitions (melting, freezing) work as
 //    in the game. Liquid hotter than the critical temperature is turned into gas by the simulation itself: no liquid exists there.
@@ -41,6 +46,8 @@ SIM_FLAG(cellsOn, "pressure.cells");
 SIM_COUNTER(blockedCondensations, "pressure.blocked-condensations"); // times the simulation was not allowed to liquefy a whole cell of cold gas
 SIM_COUNTER(blockedBoilings, "pressure.blocked-boilings");           // times it was not allowed to turn a whole cell of hot liquid into gas
 SIM_COUNTER(blockedFlashes, "pressure.blocked-flashes");             // times it was not allowed to throw 5 kg of gas out of a liquid next to a hot neighbour
+SIM_COUNTER(blockedLoadCondensations, "pressure.blocked-load-condensations"); // the same, in the whole-cell normalization while the save was loading
+SIM_COUNTER(blockedLoadBoilings, "pressure.blocked-load-boilings");           // the same, hot liquid becoming gas while the save was loading
 SIM_COUNTER(passes, "pressure.passes");                              // passes over cells done
 SIM_COUNTER(passMicros, "pressure.pass-micros");                     // their time, total
 SIM_COUNTER(tickMicros, "pressure.tick-micros");                     // time of the whole simulation tick including the own pass, total
@@ -529,6 +536,27 @@ SIM_HOOK("pressure", bool, "DoStateTransition", StateTransition, (SimData* sim, 
 		}
 	}
 	return StateTransition_original(sim, events, cell, elementData);
+}
+
+// The same whole-cell normalization while a save is loading (Sim::Load walks every cell and calls this): cold gas becomes
+// liquid entirely, hot liquid becomes gas. Blocked by the same rule as on the tick path, so that a loaded save starts in
+// the state it was saved in: gas the phase rules keep over-saturated stays gas, and the layer's or the own pass's
+// condensation, with its latent heat and minimum portion, applies to it gradually, exactly as during play. The mod sends
+// the element table and the settings before the game feeds the save to the simulation, so the tables are ready here.
+SIM_HOOK("pressure", void, "DoLoadTimeStateTransition", LoadTimeStateTransition, (SimData* sim, int32_t cell))
+{
+	if (active.load(std::memory_order_relaxed) != 0)
+	{
+		const ElementTable* elements = publishedElements.load(std::memory_order_acquire);
+		const PhaseTables* phases = publishedPhases.load(std::memory_order_acquire);
+		if (elements && phases)
+		{
+			const int blocked = BlockedTransition(sim, elements, phases, cell);
+			if (blocked == 1) { blockedLoadCondensations.fetch_add(1, std::memory_order_relaxed); return; }
+			if (blocked == 2) { blockedLoadBoilings.fetch_add(1, std::memory_order_relaxed); return; }
+		}
+	}
+	LoadTimeStateTransition_original(sim, cell);
 }
 
 // Throwing 5 kg of gas out of a liquid next to a hot neighbour: under the phase rules the liquid warms from the neighbour by ordinary

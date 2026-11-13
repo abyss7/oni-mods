@@ -102,6 +102,37 @@ namespace OniPressure
 			Mode = "waiting for the game to load";
 			harmony.Patch(AccessTools.Method(typeof(Game), "OnSpawn"), postfix: new HarmonyMethod(typeof(PhaseRules), nameof(GameSpawned)));
 			harmony.Patch(AccessTools.Method(typeof(Game), nameof(Game.OnApplicationQuit)), prefix: new HarmonyMethod(typeof(PhaseRules), nameof(LogStats)));
+			// The element table and the ban must reach the plugin before the game feeds a save to the simulation: while loading,
+			// the simulation normalizes every cell, and the phase rules forbid it the transitions between liquid and gas (see
+			// ElementsTableCreating).
+			harmony.Patch(AccessTools.Method(typeof(SimMessages), nameof(SimMessages.CreateSimElementsTable)),
+				prefix: new HarmonyMethod(typeof(PhaseRules), nameof(ElementsTableCreating)));
+		}
+
+		/// <summary>
+		/// Before the game feeds a save to the simulation (SimMessages.CreateSimElementsTable is called just before
+		/// Sim.LoadWorld, with the element table ready): the plugin gets the tables and the switch, so that while the save is
+		/// loading it already forbids the simulation its whole-cell normalization - cold gas becoming liquid, hot liquid
+		/// becoming gas. A save made during play holds gas the phase rules keep over-saturated (a small cold cell cannot
+		/// release even the smallest condensate portion: its latent heat warms the cell above saturation), and that
+		/// normalization would rain it out in the first seconds after loading (docs/backlog.md, item 36). Choose() at
+		/// Game.OnSpawn sends the same tables again and sets the final mode; no simulation tick runs before that, and if the
+		/// rules fail to start there, the switch goes off and the first tick does what loading was not allowed to.
+		/// </summary>
+		private static void ElementsTableCreating()
+		{
+			try
+			{
+				if (SimHooks.Available && SendTables(Settings()))
+				{
+					SimHooks.SetValue("pressure.active", 1);
+					Debug.Log($"{ModContext.Tag} phase rules: tables sent before the save is loaded; whole-cell transitions between liquid and gas are banned while it loads");
+				}
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"{ModContext.Tag} phase rules: sending the tables before load failed: {e.Message}");
+			}
 		}
 
 		private static void GameSpawned(Game __instance)
@@ -120,12 +151,20 @@ namespace OniPressure
 			__instance.gameObject.AddOrGet<PhaseRulesLog>();
 		}
 
+		/// <summary>The element table and the phase rule settings for the plugin. Sent before the save is loaded (ElementsTableCreating)
+		/// and again at Game.OnSpawn: the plugin rebuilds its tables, and between the two sends nothing depends on the order.</summary>
+		private static bool SendTables(byte[] settings)
+		{
+			return SimHooks.SendData("pressure.elements", ElementRecords.Build(element => false, Mod.Options.PressureByMass ? (Func<Element, float>)null : MolarMasses.Real))
+				&& SimHooks.SendData("pressure.phase-config", settings);
+		}
+
 		private static void Choose()
 		{
 			bool on = false;
 			byte[] settings = Settings();
 			string scale = Mod.Options.PressureByMass ? "pressure by gas mass" : "pressure by molecules";
-			if (!SimHooks.SendData("pressure.elements", ElementRecords.Build(element => false, Mod.Options.PressureByMass ? (Func<Element, float>)null : MolarMasses.Real)) || !SimHooks.SendData("pressure.phase-config", settings))
+			if (!SendTables(settings))
 			{
 				Mode = "off: the plugin rejected the element table or the settings";
 			}
@@ -169,7 +208,8 @@ namespace OniPressure
 				return;
 			}
 			string text = $"{ModContext.Tag} phase rules: {Mode}; the sim was not allowed to liquefy a whole cell of cold gas {SimHooks.GetValue("pressure.blocked-condensations")} times, " +
-				$"to turn a whole cell of hot liquid into gas {SimHooks.GetValue("pressure.blocked-boilings")} times, to throw 5 kg of gas out of a liquid next to a hot cell {SimHooks.GetValue("pressure.blocked-flashes")} times";
+				$"to turn a whole cell of hot liquid into gas {SimHooks.GetValue("pressure.blocked-boilings")} times, to throw 5 kg of gas out of a liquid next to a hot cell {SimHooks.GetValue("pressure.blocked-flashes")} times" +
+				$"; the same while the save was loading: {SimHooks.GetValue("pressure.blocked-load-condensations")} cells of gas and {SimHooks.GetValue("pressure.blocked-load-boilings")} of liquid left as they were";
 			long passes = SimHooks.GetValue("pressure.passes");
 			if (passes > 0)
 			{

@@ -1216,7 +1216,8 @@ int main(int argc, char** argv)
 			&& valueGet("gas-mix.sim-pressure-calls") == 0 && valueSet("gas-mix.no-such-value", 1) < 0 && valueGet("no-such-value") == -1;
 		const int32_t mixOff = pluginEnable("gas-mix", 0);
 		const bool mix = mixOn == 17 && mixOff == 17 && values;
-		// The pressure plugin next to the mixture layer: transition blocking (two hooks) and its own pass over the cells,
+		// The pressure plugin next to the mixture layer: transition blocking (three hooks: two on the tick path, one on the
+		// load-time cell normalization) and its own pass over the cells,
 		// which sits on the same tick function as the layer. The engine puts both into a chain; whether to skip its own
 		// pass next to the layer is decided by the pressure mod (the phase rules are then computed by the layer).
 		const int32_t mixAgain = pluginEnable("gas-mix", 1);
@@ -1233,7 +1234,7 @@ int main(int argc, char** argv)
 		const int32_t ownOn = pluginEnable("liquid-own", 1), ownOff = pluginEnable("liquid-own", 0);
 		const int32_t mixingOn = pluginEnable("liquid-mixing", 1), mixingOff = pluginEnable("liquid-mixing", 0);
 		pluginEnable("gas-mix", 0);
-		const bool pressureHooks = mixAgain == 17 && phaseOn == 2 && phaseOff == 2 && cellsBeside == 1 && cellsOff == 1 && liquidBeside == 1 && liquidOff == 1
+		const bool pressureHooks = mixAgain == 17 && phaseOn == 3 && phaseOff == 3 && cellsBeside == 1 && cellsOff == 1 && liquidBeside == 1 && liquidOff == 1
 			&& measureOn == 2 && measureOff == 2 && shadowOn == 3 && shadowOff == 3 && ownOn == 1 && ownOff == 1 && mixingOn == 14 && mixingOff == 14;
 		printf("plugins next to the gas mixture layer: pressure transition hooks %d, on the same tick function its own pass %d and the liquid mixture plugin %d: %s\n",
 			phaseOn, cellsBeside, liquidBeside, pressureHooks ? "ok" : "FAILED");
